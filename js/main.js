@@ -84,6 +84,7 @@ function safeRect() {
   return { l: left, r: W - right, t: top, b: H - 6 };
 }
 function resize() {
+  setTimeout(() => { if (m && m.practice) updPrac(); }, 80);
   DPR = Math.min(3, window.devicePixelRatio || 1);
   const vv = window.visualViewport;
   PW = Math.max(1, Math.round(vv && vv.width ? Math.min(innerWidth, vv.width) : innerWidth) || 1);
@@ -281,7 +282,8 @@ function drawShadow(c, b) {
 }
 function render(dt) {
   let sx = 0, sy = 0;
-  if (juice.shake > 0) { juice.shake = Math.max(0, juice.shake - (dt || 0.016)); const a = juice.amp * Math.min(1, juice.shake / 0.2); sx = (Math.random() * 2 - 1) * a; sy = (Math.random() * 2 - 1) * a; }
+  if (juice.shake > 0) { juice.shake = Math.max(0, juice.shake - (dt || 0.016)); const a = juice.amp * Math.min(1, juice.shake / 0.2); juice.k = (juice.k || 0) + 1; sx = Math.sin(juice.k * 2.3) * a; sy = Math.cos(juice.k * 3.1) * a; } else juice.k = 0;
+  juice.ox = sx; juice.oy = sy;
   if (!m) juice.shake = juice.flash = 0;
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0); if (sx || sy) { ctx.clearRect(0, 0, W, H); ctx.setTransform(DPR, 0, 0, DPR, sx * DPR, sy * DPR); }
   if (!layer || layerR !== R || layerKey !== (PORT ? 'P' : 'L') + W + 'x' + H) buildLayer();
@@ -400,25 +402,52 @@ function showMsg(a, b, cls, dur) { const e = $('msg'); $('msgA').textContent = a
 function toast(t) { const e = $('toast'); e.textContent = t; e.classList.remove('hide'); clearTimeout(toast.t); toast.t = setTimeout(() => e.classList.add('hide'), 2600); }
 const teamOf = (i) => i % 2;
 // ---- v7 smash: screen shake / flash, low-ball 殺球 warning ----
-const juice = { shake: 0, flash: 0, n: 0, sfx: 0, amp: 0 }; let lowTipT = 0, smashLowNow = false;
+const juice = { shake: 0, flash: 0, n: 0, sfx: 0, amp: 0, ox: 0, oy: 0 };
+let lowTipT = 0, smashLowNow = false;
+const FREEZE = { armed: false, at: 0, left: -1, frozen: false }; // test hook: hold the exact frame N frames after a smash triggers
 const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
-function smashJuice(ds) { juice.n++; juice.shake = ds ? 0.32 : 0.22; juice.amp = RM ? 0 : ds ? 7 : 4; juice.flash = ds ? 0.3 : 0.16; SFX.smash(); }
-// predicted height of the incoming ball where it reaches me (null when nothing is coming my way)
+function smashJuice(ds) { if (FREEZE.armed) { FREEZE.armed = false; FREEZE.left = FREEZE.at; } juice.n++; juice.shake = ds ? 0.32 : 0.22; juice.amp = RM ? 0 : ds ? 7 : 4; juice.flash = ds ? 0.3 : 0.16; SFX.smash(); }
+// v8: the 殺球 button's low state follows the PREDICTED contact: only for a ball coming to my side that I can legally reach in
+// time; a new state must hold for 0.35 s before it shows, and it changes at most once per incoming shot.
 function contactZ(me) {
   if (!m || !me || m.phase !== 'rally' || !m.live || m.lastHitTeam === me.team) return null;
-  const b = { ...m.ball }, dt = 1 / 60, reach = C.REACH * 1.3; let bo = m.bounces, best = null, bd = 1e9;
-  for (let t = 0; t < 2.4; t += dt) {
+  const b = { ...m.ball }, dt = 1 / 60, reach = C.REACH * ((PB.HUMAN_REACH || {})[m.diff] || 1.3) * 0.95, volleyOk = m.hits >= 3; let bo = m.bounces;
+  for (let t = dt; t < 2.6; t += dt) {
     b.vz -= C.G * dt; b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt;
     if (b.z <= C.R && b.vz < 0) { b.z = C.R; b.vz = -b.vz * C.BOUNCE; b.vx *= C.FRIC; b.vy *= C.FRIC; if (++bo >= 2) break; }
-    if ((b.x < 0 ? 0 : 1) !== me.team || b.z < 0.06 || b.z > 2.4) continue;
-    const d = Math.hypot(b.x - me.x, b.y - me.y); if (d <= reach) return b.z; if (d < bd) { bd = d; best = b.z; }
+    if ((b.x < 0 ? 0 : 1) !== me.team || b.z < 0.06 || b.z > 2.4 * (b.z > 1.7 ? 0.8 : 1) + 0.5) continue;
+    if (bo === m.bounces && !volleyOk && m.bounces === 0) continue;                 // two-bounce rule: must let it bounce first
+    if (Math.max(0, Math.hypot(b.x - me.x, b.y - me.y) - reach) <= C.SPEED * t * 0.9) return b.z; // first spot I can get to in time
   }
-  return best;
+  return null; // not hittable by me: don't judge
+}
+const SL = { want: false, since: 0, key: '', used: false, toggles: 0, shots: 0, short: 0, lastT: 0, log: [] };
+function setSmashLow(low, now) {
+  if (low === smashLowNow) return; smashLowNow = low; SL.toggles++; if (now - SL.lastT < 300) SL.short++; SL.lastT = now; SL.log.push([Math.round(now), low ? 1 : 0]); if (SL.log.length > 200) SL.log.shift();
+  const bt = $('tbSmash'); bt.classList.toggle('low', low); bt.querySelector('b').textContent = low ? '抽' : '殺球'; bt.querySelector('small').textContent = low ? '▼' : 'SMASH';
 }
 function updSmashBtn() {
-  const me = m && state === 'play' && role !== 'spectator' ? m.players[mySeat] : null, z = contactZ(me), low = z != null && z < PB.SMASH_Z;
-  if (low === smashLowNow) return; smashLowNow = low;
-  const bt = $('tbSmash'); bt.classList.toggle('low', low); bt.querySelector('b').textContent = low ? '抽' : '殺球'; bt.querySelector('small').textContent = low ? '球太低' : 'SMASH';
+  const now = performance.now(), me = m && state === 'play' && role !== 'spectator' ? m.players[mySeat] : null;
+  if (!me) { SL.key = ''; if (smashLowNow) setSmashLow(false, now); return; }
+  if (m.phase === 'serve') { SL.key = ''; return; } // between points: hold (the next incoming shot decides)
+  const key = m.point + ':' + m.hits; const z = contactZ(me);
+  if (z == null) return;                                         // nothing for me to hit: hold
+  if (key !== SL.key) { SL.key = key; SL.used = false; SL.shots++; SL.want = smashLowNow; SL.since = now; }
+  const low = z < PB.SMASH_Z;
+  if (low !== SL.want) { SL.want = low; SL.since = now; }
+  if (!SL.used && SL.want !== smashLowNow && now - SL.since >= 350) { setSmashLow(SL.want, now); SL.used = true; }
+}
+function smashCard(e) {
+  const c = $('smashCard'), p = m.players[e.p]; if (!c) return;
+  const mine = role !== 'spectator' && teamOf(e.p) === teamOf(mySeat);
+  $('smashSub').textContent = (p ? p.name + (e.p === mySeat ? '（你）' : '') + ' ' : '') + (e.how === 'win' ? '殺球致勝！' : '殺球逼出失誤！');
+  c.className = mine ? 'own' : 'opp'; void c.offsetWidth; c.classList.add('go'); clearTimeout(smashCard.t); smashCard.t = setTimeout(() => c.classList.remove('go'), 1400); smashCard.n = (smashCard.n || 0) + 1;
+}
+function updPrac() {
+  const el = $('prac'); if (!el) return; const on = !!(m && m.practice && state === 'play'); el.classList.toggle('hide', !on); if (!on) return;
+  const s = m.smStats[teamOf(mySeat)];
+  if (!PORT) { const bd = $('board'); if (bd) { const r = appRect(bd); if (r.height) el.style.setProperty('--pracy', Math.round(r.bottom + 6) + 'px'); } }
+  el.innerHTML = `<b>殺球練習</b><span>殺球 <i>${s.n}</i></span><span>致勝 <i>${s.win}</i></span><span>逼失誤 <i>${s.forced}</i></span><span>被回擊 <i>${s.ret}</i></span><span>失誤 <i>${s.own}</i></span>`;
 }
 function lowTip() { lowTipT = performance.now() + 1300; }
 function handleEvent(e) {
@@ -439,10 +468,11 @@ function handleEvent(e) {
       const res = e.k === 'point' ? side(e.team) + '得分！' : e.k === 'sideout' ? '換' + side(e.team) + '發球（Side Out）' : e.text;
       showMsg(lastFault ? lastFault.reason : '', who + res, mine ? 'good' : 'bad', 2300);
       lastReason = lastFault ? lastFault.reason : ''; lastFault = null; break; }
-    case 'call': { const spec = role === 'spectator', ot = spec ? 0 : teamOf(mySeat);
+    case 'call': if (m.practice) break; { const spec = role === 'spectator', ot = spec ? 0 : teamOf(mySeat);
       showMsg('', (e.first ? '開賽！' : lastReason ? '上一球：' + lastReason + '・' : '') + (m.mode === 2 ? '報分 ' + e.text + '・' : '') + '發球：' + (m.players[e.server] ? m.players[e.server].name : ''), 'info call', lastReason ? 1700 : 1000);
       $('msgA').innerHTML = `<span class="own">${spec ? esc(m.teamNames[0]) : '你'} ${m.score[ot]}</span> – ${m.score[1 - ot]} ${spec ? esc(m.teamNames[1]) : '對手'}`; // own team first, own score highlighted
       lastReason = ''; break; }
+    case 'smashend': if (e.how === 'win' || e.how === 'forced') smashCard(e); updPrac(); break;
     case 'win': SFX.win(); break;
     case 'over': endGame(); break;
   }
@@ -460,11 +490,12 @@ function updHUD() {
     $('scL').textContent = m.score[lt]; $('scR').textContent = m.score[rt];
     $('tmL').classList.toggle('serving', m.servingTeam === lt); $('tmR').classList.toggle('serving', m.servingTeam === rt);
     { const ow = m.score[lt], op = m.score[rt]; $('call').innerHTML = `<b class="own">${ow}</b><i>-</i>${op}`; } // own team first, like the rows
-    $('hdr').textContent = `${m.mode === 2 ? '雙打' : '單打'}・${DIFF_NAME[m.diff] || ''}・${m.target}分`;
+    $('hdr').textContent = m.practice ? `殺球練習・${DIFF_NAME[m.diff] || ''}` : `${m.mode === 2 ? '雙打' : '單打'}・${DIFF_NAME[m.diff] || ''}・${m.target}分`;
     const sp = m.players[m.server];
     const sw = m.servingTeam === lt && role !== 'spectator' ? '你方' : m.teamNames[m.servingTeam];
-    $('srv').textContent = m.mode === 2 ? `報分 ${PB.callText(m)}・${sw}發球 ${sp ? sp.name : ''}` : `${sw}發球・${sp ? sp.name : ''}`;
+    $('srv').textContent = m.practice ? '電腦一直餵高球' : m.mode === 2 ? `報分 ${PB.callText(m)}・${sw}發球 ${sp ? sp.name : ''}` : `${sw}發球・${sp ? sp.name : ''}`;
     requestAnimationFrame(measureHud);
+    if (m.practice) requestAnimationFrame(updPrac);
   }
   // rule tips
   const tip = $('tip'); let t = '', warn = false; const me = m.players[mySeat];
@@ -533,7 +564,8 @@ function autopilot(p) {
   if (m.phase === 'serve') { const f = PB.formation(m)[p.i]; tx = f.x; ty = f.y; if (m.server === p.i && m.phaseT > 1.1 && apServeT !== m.point) { apServeT = m.point; press('drive'); } }
   else if (m.live && m.lastHitTeam !== p.team) {
     const key = m.rally + ':' + m.bounces; if (key !== apKey || !apPred) { if (!apKey.startsWith(m.rally + ':')) apLazy = Math.random() < 0.05; apKey = key; apPred = PB.predict(m); }
-    if (apLazy) return { mx: 0, my: 0 }; // autopilot occasionally misses so points get decided
+    if (apLazy && !m.practice) return { mx: 0, my: 0 }; // autopilot occasionally misses so points get decided
+    if (m.practice && !smashLowNow && contactZ(p) != null && contactZ(p) >= PB.SMASH_Z && Math.hypot(b.x - p.x, b.y - p.y) < 2.2) press('smash'); // practice: smash when the button says 殺球
     let mate = m.players.find((q) => q.team === p.team && q !== p);
     const fb = apPred.firstBounce; if (fb && (fb.x < 0 ? 0 : 1) === p.team) { tx = fb.x + xs * 0.6; ty = fb.y; } // at least chase the landing spot
     for (const q of apPred) {
@@ -569,8 +601,12 @@ function startLocal(mode) {
   const seats = seatsLocal(mode); const cfg = { mode, diff: opt.diff, target: opt.target, seats, teamNames: teamNamesOf(seats), firstServe: Math.random() < 0.5 ? 0 : 1 };
   beginMatch(cfg);
 }
+function startPractice() {
+  role = 'local'; mySeat = 0; R = 1;
+  const seats = seatsLocal(1); beginMatch({ mode: 1, diff: opt.diff, target: 999, seats, teamNames: teamNamesOf(seats), firstServe: 1, practice: 'smash' }); updPrac();
+}
 function beginMatch(cfg) {
-  m = PB.createMatch(cfg); hudSig = ''; fx.length = 0; trail.length = 0; paused = false;
+  m = PB.createMatch(cfg); hudSig = ''; setTimeout(updPrac, 0); fx.length = 0; trail.length = 0; paused = false;
   for (const p of m.players) { p.rp = { x: p.x, y: p.y }; }
   state = 'play';
   ['menu', 'room', 'end', 'pause', 'rules'].forEach((i) => $(i).classList.add('hide'));
@@ -593,7 +629,7 @@ function endGame() {
 function toMenu(msg) {
   showWait(false); hostAway = false; hostAwayMsg = false;
   state = 'menu'; m = null; role = 'local'; R = 1; layer = null;
-  ['room', 'end', 'pause', 'hud', 'touch', 'keys', 'tip', 'msg'].forEach((i) => $(i).classList.add('hide'));
+  ['room', 'end', 'pause', 'hud', 'touch', 'keys', 'tip', 'msg', 'prac'].forEach((i) => $(i).classList.add('hide'));
   optHome(); $('menu').classList.remove('hide'); st(msg || ''); resize();
 }
 function togglePause() {
@@ -622,6 +658,7 @@ try { $('nick').value = localStorage.pbNick || ''; } catch (_) {}
 $('nick').addEventListener('change', () => { try { localStorage.pbNick = $('nick').value.trim(); } catch (_) {} });
 $('bS1').onclick = () => { audio(); SFX.click(); startLocal(1); };
 $('bS2').onclick = () => { audio(); SFX.click(); startLocal(2); };
+$('bPrac').onclick = () => { audio(); SFX.click(); startPractice(); };
 function drawPrev() { const cv2 = $('lookPrev'); if (!cv2) return; const g = cv2.getContext('2d'); const L = myLook(); g.clearRect(0, 0, cv2.width, cv2.height); const sh = sheet(L.ch, L.co); if (sh) { const fr = Math.floor(performance.now() / 166) % 4, k = cv2.height / FH; g.drawImage(sh, fr * FW, 0, FW, FH, (cv2.width - FW * k) / 2, 0, FW * k, FH * k); } $('lookName').textContent = CHARS[L.ch].n + '・' + COLN[L.co]; }
 setInterval(() => { if (state === 'menu') drawPrev(); }, 166);
 const showRules = () => $('rules').classList.remove('hide');
@@ -861,6 +898,7 @@ function frame(now) {
   try { frameBody(now); } catch (err) { if (!frame.w2) { frame.w2 = 1; console.warn('frame recovered', err && err.message); } }
 }
 function frameBody(now) {
+  if (FREEZE.frozen) { lastFrame = now; return; }
   let dt = (now - lastFrame) / 1000; lastFrame = now; if (!(dt > 0)) dt = 1 / 60; dt = Math.min(dt, 0.05);
   fpsAcc += dt; fpsN++; if (fpsAcc > 0.5) { fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0; }
   if (m && (state === 'play' || state === 'end')) {
@@ -875,10 +913,12 @@ function frameBody(now) {
     updSmashBtn(); updHUD(); placeMsg(false); placeTip(); dimOverBall();
   }
   try { render(dt); } catch (err) { layer = null; if (!frame.warned) { frame.warned = 1; console.warn('render recovered', err && err.message); } }
+  if (FREEZE.left >= 0) { if (FREEZE.left === 0) { FREEZE.frozen = true; FREEZE.shot = { ox: juice.ox, oy: juice.oy, flash: juice.flash, shake: juice.shake, amp: juice.amp }; } FREEZE.left--; }
 }
 resize();
 function loop(now) { frame(now); requestAnimationFrame(loop); }
 requestAnimationFrame(loop);
 // test hooks
-window.__pb = { looks: () => ({ room, prefs, rs: roomSeats() }), get m() { return m; }, proj, get view() { return { W, H, F, touchUI, port: PORT, pan: PAN, safe: safeRect(), ballR: lastBallR, tags: lastTags, hud: hudBlock, fpsY }; }, showMsg, get state() { return state; }, get role() { return role; }, get room() { return roomCode; }, get roster() { return roster; }, get net() { return net; }, get fps() { return fps; }, get seat() { return mySeat; }, get forced() { return FORCED; }, appRect, appXY, get orient() { return opt.orient; }, hitCount, startLocal, press, juice, get smashLow() { return smashLowNow; }, contactZ: () => contactZ(m && m.players[mySeat]), get lowTipT() { return lowTipT; } };
+window.__pb = { looks: () => ({ room, prefs, rs: roomSeats() }), get m() { return m; }, proj, get view() { return { W, H, F, touchUI, port: PORT, pan: PAN, safe: safeRect(), ballR: lastBallR, tags: lastTags, hud: hudBlock, fpsY }; }, showMsg, get state() { return state; }, get role() { return role; }, get room() { return roomCode; }, get roster() { return roster; }, get net() { return net; }, get fps() { return fps; }, get seat() { return mySeat; }, get forced() { return FORCED; }, appRect, appXY, get orient() { return opt.orient; }, hitCount, startLocal, press, juice, get smashLow() { return smashLowNow; }, contactZ: () => contactZ(m && m.players[mySeat]), get lowTipT() { return lowTipT; }, SL, startPractice, freezeJuice: (k) => { FREEZE.armed = true; FREEZE.at = k | 0; FREEZE.left = -1; FREEZE.frozen = false; }, unfreeze: () => { FREEZE.frozen = false; FREEZE.left = -1; FREEZE.armed = false; }, get freeze() { return FREEZE; }, get cards() { return smashCard.n || 0; } };
+if (QS.get('demo') === 'smash') startPractice(); // ?demo=smash opens 殺球練習 directly
 })();

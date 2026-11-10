@@ -42,6 +42,7 @@ function play(diff, seed, mode) {
   out.pw = m.score[0]; out.pl = m.score[1]; out.games = 1; out.gw = m.winner === 0 ? 1 : 0;
   return out;
 }
+function run() {
 const res = {};
 for (const mode of (process.env.MODES || '1,2').split(',').map(Number)) for (const diff of ['easy', 'normal', 'hard']) {
   const a = { n: 0, winner: 0, forced: 0, own: 0, returned: 0, low: 0, lowErr: 0, pw: 0, pl: 0, games: 0, gw: 0 };
@@ -50,4 +51,7 @@ for (const mode of (process.env.MODES || '1,2').split(',').map(Number)) for (con
   console.log(`${mode === 2 ? '2v2' : '1v1'} ${diff.padEnd(6)} smashes ${a.n}: winners ${pc(a.winner)} + forced errors ${pc(a.forced)} = ${pc(a.winner + a.forced)} won | own errors ${pc(a.own)} | returned ${pc(a.returned)}${a.low ? ` | low-ball 殺球 ${a.low}, own error ${(100 * a.lowErr / a.low).toFixed(0)}%` : ''} | bot score ${a.pw}:${a.pl}, games ${a.gw}/${a.games}`);
 }
 if (process.env.FATE) console.log(FT, 'q avg', (QS.reduce((a, b) => a + b, 0) / QS.length).toFixed(2));
-module.exports = res;
+return res;
+}
+module.exports = { bot, run };
+if (require.main === module) run();

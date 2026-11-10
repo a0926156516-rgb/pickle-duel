@@ -250,4 +250,18 @@ body.land #tbSmash{right:70px;bottom:202px;width:79px;height:79px}
 /* ===== v7: 殺球 dims to 「抽」 when the incoming ball is too low ===== */
 #tbSmash.low{filter:grayscale(.85) brightness(.75);opacity:.62;border-style:dashed}
 #tbSmash.low b{font-size:17px}
-#tbSmash.low small{opacity:.95;color:#ffd0d0}
+#tbSmash.low small{opacity:.95;color:#ffd0d0;font-size:11px;line-height:1}
+/* ===== v8: SMASH! card, 殺球練習 stats, practice button ===== */
+#smashCard{position:fixed;left:50%;top:34%;transform:translate(-50%,-50%) scale(.4);opacity:0;pointer-events:none;z-index:7;text-align:center;visibility:hidden}
+#smashCard b{display:block;font:900 italic 54px/1 system-ui,sans-serif;letter-spacing:2px;color:#fff;-webkit-text-stroke:2px #b41ea0;text-shadow:0 0 18px rgba(255,80,210,.9),4px 4px 0 #b41ea0}
+#smashCard span{display:inline-block;margin-top:6px;padding:3px 12px;border-radius:14px;background:rgba(10,8,30,.75);font-size:14px;font-weight:700;color:#ffe14d}
+#smashCard.opp b{-webkit-text-stroke-color:#3a4b8c;text-shadow:0 0 14px rgba(120,150,255,.8),4px 4px 0 #3a4b8c}
+#smashCard.go{visibility:visible;animation:smashPop 1.4s ease-out forwards}
+@keyframes smashPop{0%{opacity:0;transform:translate(-50%,-50%) scale(.4) rotate(-8deg)}12%{opacity:1;transform:translate(-50%,-50%) scale(1.15) rotate(-4deg)}22%{transform:translate(-50%,-50%) scale(1) rotate(-4deg)}80%{opacity:1}100%{opacity:0;transform:translate(-50%,-50%) scale(1.05) rotate(-4deg)}}
+#prac{position:fixed;left:50%;transform:translateX(-50%);top:calc(6px + env(safe-area-inset-top));z-index:6;display:flex;gap:8px;align-items:center;background:rgba(10,8,30,.78);border:1px solid rgba(255,107,213,.7);border-radius:12px;padding:4px 10px;font-size:12px;white-space:nowrap;pointer-events:none}
+#prac b{color:#ff8be0}#prac i{font-style:normal;font-weight:800;color:#ffe14d}
+body.port #prac{top:auto;bottom:calc(218px + env(safe-area-inset-bottom));gap:6px;font-size:11px;padding:3px 8px}
+body.port.pshort #prac{bottom:calc(186px + env(safe-area-inset-bottom))}
+body.land #prac{left:calc(8px + env(safe-area-inset-left));right:auto;transform:none;top:var(--pracy,104px);bottom:auto;flex-direction:column;gap:0;align-items:flex-start;padding:4px 8px;font-size:11px;line-height:1.35}
+h2.h2prac{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.b5{border:0;border-radius:14px;padding:5px 12px;font-size:12px;font-weight:800;color:#fff;background:linear-gradient(135deg,#ff6bd5,#b41ea0);box-shadow:0 2px 0 rgba(0,0,0,.35);cursor:pointer;white-space:nowrap}

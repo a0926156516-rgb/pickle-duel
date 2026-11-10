@@ -41,7 +41,9 @@ function createMatch(cfg) {
     serverNum: mode === 2 ? 2 : 1, server: 0, receiver: 1, sides: [],
     phase: 'serve', phaseT: 0, point: 0, hits: 0, bounces: 0, lastHitTeam: -1, lastHitter: -1,
     ball: { x: 0, y: 0, z: 1, vx: 0, vy: 0, vz: 0 }, live: false, events: [], winner: -1,
-    pred: null, msg: '', rally: 0, stats: { faults: {}, rallies: [], points: 0 }, autoServe: cfg.autoServe || 10
+    pred: null, msg: '', rally: 0, stats: { faults: {}, rallies: [], points: 0 }, autoServe: cfg.autoServe || 10,
+    practice: cfg.practice === 'smash' ? 'smash' : null, // v8 殺球練習: the CPU keeps feeding high balls
+    smStats: [0, 1].map(() => ({ n: 0, win: 0, forced: 0, own: 0, ret: 0 })), smTrack: null
   };
   for (let i = 0; i < n; i++) {
     const s = (cfg.seats && cfg.seats[i]) || {};
@@ -96,7 +98,7 @@ function setupPoint(m, first) {
   }
   const pos = formation(m);
   for (const p of m.players) { p.x = pos[p.i].x; p.y = pos[p.i].y; p.vx = p.vy = 0; p.swing = 0; p.volleyT = -9; p.face = p.team === 0 ? 1 : -1; p.ai.leave = -1; p.ai.serveAt = 0.9 + m.r() * 0.8; }
-  m.phase = 'serve'; m.phaseT = 0; m.hits = 0; m.bounces = 0; m.lastHitTeam = -1; m.lastHitter = -1; m.live = false; m.rally = 0; m.smFate = null;
+  m.phase = 'serve'; m.phaseT = 0; m.hits = 0; m.bounces = 0; m.lastHitTeam = -1; m.lastHitter = -1; m.live = false; m.rally = 0; m.smFate = null; m.smTrack = null;
   m.point++; m.pred = null; holdBall(m);
   ev(m, { k: 'call', text: callText(m), server: m.server, first: !!first });
 }
@@ -164,6 +166,7 @@ function makeShot(m, p, shot, aimY, aiTarget) {
     T = Math.hypot(tx - from.x, ty - from.y) / sp; clr = 0.04; }
   else if (kind === 'drive') { tx = xs * (aiTarget && aiTarget.x ? aiTarget.x : 5.4 + r() * 0.7); const sp = (human ? 12.5 : D.drive) * power; T = Math.hypot(tx - from.x, ty - from.y) / sp; clr = low ? 0.02 : 0.1; }
   else if (kind === 'dink') { tx = xs * (1.05 + r() * 0.75); const d = Math.hypot(tx - from.x, ty - from.y); T = Math.max(0.75, d / 5.8); clr = 0.2; }
+  else if (aiTarget && aiTarget.feed) { kind = 'lob'; tx = xs * (3.6 + r() * 1.8); ty = (r() - 0.5) * 3.2; T = 1.3 + r() * 0.3; clr = 0.6; sig *= 0.5; if (fate !== 'err') perr = 0; } // 殺球練習 feed: a high ball into the smash zone
   else { kind = 'lob'; tx = xs * (5.5 + r() * 0.75); T = 1.5 + r() * 0.35; clr = 0.6; }
   p.popUp = fate === 'weak';
   if (fate === 'weak') { kind = 'lob'; tx = xs * (2.6 + r() * 1.4); ty = (r() - 0.5) * 2; T = 1.15 + r() * 0.25; clr = 0.5; sig *= 0.6; } // stabbed it back: a short, high sitter
@@ -195,8 +198,17 @@ function makeShot(m, p, shot, aimY, aiTarget) {
 }
 
 // ---- rules ----
+// ---- v8 smash outcome tracking (bookkeeping only; does not change any call) ----
+// a deliberate 殺球 ends as: win = point/rally over before the other side touched it, forced = the other side touched it and
+// that touch was the rally's last (net / out / not over), ret = the other side got it back into play, own = the smash itself faulted.
+function smResolve(m, how) {
+  const t = m.smTrack; if (!t) return; m.smTrack = null;
+  m.smStats[t.team].n++; m.smStats[t.team][how]++;
+  ev(m, { k: 'smashend', team: t.team, p: t.p, how });
+}
 function fault(m, team, reason, who) {
   if (m.phase !== 'rally' && m.phase !== 'serve') return;
+  if (m.smTrack) { const t = m.smTrack; smResolve(m, team === t.team ? (t.touched ? 'ret' : 'own') : t.touched ? 'forced' : 'win'); }
   m.phase = 'dead'; m.phaseT = 0; m.live = false;
   m.stats.faults[reason] = (m.stats.faults[reason] || 0) + 1; m.stats.rallies.push(m.rally); m.stats.points++;
   const st = m.servingTeam;
@@ -229,6 +241,7 @@ function onBounce(m) {
   }
   if (half === m.lastHitTeam) return fault(m, m.lastHitTeam, '球未過網', m.lastHitter);
   if (m.bounces === 0 && isOut(b.x, b.y)) return fault(m, m.lastHitTeam, '出界！', m.lastHitter);
+  if (m.smTrack && m.smTrack.touched && half === m.smTrack.team) smResolve(m, 'ret'); // the reply landed in
   m.bounces++; m.pred = null;
   if (m.bounces >= 2) return fault(m, half, '兩次落地（沒接到）', -1);
 }
@@ -252,11 +265,13 @@ function illegal(m, p) {
 }
 function doHit(m, p, shot, aimY, aiTarget) {
   const bad = illegal(m, p);
+  if (m.smTrack) { if (p.team !== m.smTrack.team) m.smTrack.touched = 1; else if (m.smTrack.touched) smResolve(m, 'ret'); }
   p.swing = 1; p.swingShot = shot;
   if (bad) { ev(m, { k: 'hit', p: p.i, shot }); return fault(m, p.team, bad, p.i); }
   if (m.bounces === 0) p.volleyT = m.t;
   const kind = makeShot(m, p, shot, aimY, aiTarget);
   m.hits++; m.rally++; m.bounces = 0; m.lastHitTeam = p.team; m.lastHitter = p.i; m.pred = null;
+  if (shot === 'smash' && kind === 'smash') m.smTrack = { team: p.team, p: p.i, touched: 0 };
   ev(m, { k: 'hit', p: p.i, shot: kind, volley: p.volleyT === m.t, low: p.lowSmash ? 1 : 0, ds: shot === 'smash' && kind === 'smash' ? 1 : 0, pop: p.popUp ? 1 : 0 });
 }
 function doServe(m, shot, aimY) {
@@ -315,7 +330,7 @@ function aiThink(m, p, dt) {
   let tx, ty;
   if (m.phase === 'serve') {
     const f = formation(m)[p.i]; tx = f.x; ty = f.y;
-    if (p.i === m.server && m.phaseT > a.serveAt) { const k = m.r(); doServe(m, k < 0.82 ? 'drive' : k < 0.92 ? 'lob' : 'dink', 0); return; }
+    if (p.i === m.server && m.phaseT > a.serveAt && !m.practice) { const k = m.r(); doServe(m, k < 0.82 ? 'drive' : k < 0.92 ? 'lob' : 'dink', 0); return; }
   } else {
     // ready position
     const atNet = p.team === m.servingTeam ? m.hits >= 3 || (m.hits >= 2 && m.lastHitTeam === p.team) : m.hits >= 2;
@@ -378,10 +393,20 @@ function aiShot(m, p) {
   let by = 0, bs = -1;
   for (const y of [-2.3, -1.2, 0, 1.2, 2.3]) { const s = Math.min(...opp.map((q) => Math.abs(q.y - y))) + r() * 0.8; if (s > bs) { bs = s; by = y; } }
   if (shot === 'dink') by = clamp(-p.y * 0.6 + (r() - 0.5), -2.2, 2.2);
+  if (m.practice) return { shot: 'lob', target: { feed: true } };
   return { shot, target: { y: by } };
 }
 
 // ---- main step ----
+// 殺球練習 (v8): each rep starts mid-rally (both bounces already played, so volleys are legal) with the CPU lifting a high ball
+// into the player's smash zone; from there the normal rules decide the point. The CPU keeps answering with feeds.
+function practiceFeed(m) {
+  const fp = teamPlayers(m, 1)[0], r = m.r; if (!fp) return;
+  m.phase = 'rally'; m.phaseT = 0; m.live = true; m.hits = 4; m.rally = 4; m.bounces = 0; m.lastHitTeam = fp.team; m.lastHitter = fp.i; m.pred = null;
+  const from = { x: fp.x - 0.3, y: fp.y, z: 0.8 }, tx = -(3.6 + r() * 1.8), ty = (r() - 0.5) * 3.2;
+  const v = launch(from, tx, ty, 1.3 + r() * 0.3, 0.6); Object.assign(m.ball, from, v);
+  fp.swing = 1; fp.swingShot = 'lob'; ev(m, { k: 'hit', p: fp.i, shot: 'lob', feed: 1 });
+}
 function step(m, dt) {
   const n = Math.max(1, Math.round(dt / C.DT)); const h = dt / n;
   for (let i = 0; i < n; i++) sub(m, h);
@@ -394,6 +419,7 @@ function sub(m, dt) {
     else if (p.ctrl === 'local' || p.ctrl === 'bot') movePlayer(m, p, p.in.mx, p.in.my, C.SPEED, dt);
     else { clampPlayer(m, p); if (p.swing > 0) p.swing = Math.max(0, p.swing - dt * 3.2); } // remote: position comes from network
   }
+  if (m.phase === 'serve' && m.practice) { holdBall(m); if (m.phaseT > 0.8) practiceFeed(m); return; }
   if (m.phase === 'serve') {
     const s = m.players[m.server];
     holdBall(m);
@@ -450,6 +476,6 @@ function sub(m, dt) {
   }
 }
 
-const API = { C, DIFF, SMASH_Z, TEAM_NAME, createMatch, step, setupPoint, callText, movePlayer, clampPlayer, teamSign, sideSign, netH, inKitchen, isOut, predict, formation };
+const API = { C, DIFF, SMASH_Z, HUMAN_REACH, TEAM_NAME, createMatch, step, setupPoint, callText, movePlayer, clampPlayer, teamSign, sideSign, netH, inKitchen, isOut, predict, formation };
 if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.PB = API;
 })(typeof self !== 'undefined' ? self : this);

@@ -12,15 +12,15 @@ let fails = 0; const ok = (c, t) => { console.log((c ? 'PASS ' : 'FAIL ') + t); 
     await p.goto(BASE + q); await p.evaluate(() => __pb.startLocal(1)); await p.waitForFunction(() => __pb.state === 'play'); await p.waitForTimeout(800); return { p, touch, tapEl, phys }; };
   // incoming ball for me (seat 0, left/near half) at a chosen height; the CPU is parked so the point does not move on
   const incoming = (p, z, vz) => p.evaluate(([z, vz]) => { const m = __pb.m, me = m.players[__pb.seat], o = m.players.find((q) => q.team !== me.team);
-    m.phase = 'rally'; m.live = true; m.hits = 5; m.rally = 5; m.bounces = 1; m.lastHitTeam = o.team; m.lastHitter = o.i; me.x = -4.6; me.y = 0; o.x = 4; o.y = 0;
-    Object.assign(m.ball, { x: -2.2, y: 0.05, z, vx: -4.6, vy: 0, vz }); }, [z, vz]);
+    m.phase = 'rally'; m.live = true; m.hits = 5; m.rally = 5; m.bounces = 0; m.lastHitTeam = o.team; m.lastHitter = o.i; me.x = -4.6; me.y = 0; o.x = 4; o.y = 0;
+    Object.assign(m.ball, { x: -0.6, y: 0.05, z, vx: -4, vy: 0, vz }); }, [z, vz]);
   for (const [w, h, q, tag] of [[390, 844, '', 'portrait_390x844'], [375, 667, '?orient=land', 'forced_land_375x667'], [844, 390, '', 'landscape_844x390']]) {
     const { p, tapEl } = await mk(w, h, q, tag);
     // low ball: button turns into 「抽」 before the hit, the tap shows the hint, the stroke is a power drive
-    await incoming(p, 0.35, 0.3); await p.waitForTimeout(90);
+    await incoming(p, 0.5, 0.5); await p.waitForTimeout(450);
     const lo = await p.evaluate(() => ({ low: __pb.smashLow, z: __pb.contactZ(), lab: document.querySelector('#tbSmash b').textContent, sm: document.querySelector('#tbSmash small').textContent, cls: document.getElementById('tbSmash').classList.contains('low'), op: getComputedStyle(document.getElementById('tbSmash')).opacity }));
-    ok(lo.low && lo.cls && lo.lab === '抽' && lo.sm === '球太低' && +lo.op < 0.8, `[${tag}] ball coming in low (meets me at ${lo.z && lo.z.toFixed(2)} m) -> 殺球 dims and reads 「抽」 / 球太低 (opacity ${lo.op})`);
-    if (tag !== 'landscape_844x390') { await p.screenshot({ path: SHOT + `smash_button_low_${tag}.png` }); await incoming(p, 0.35, 0.3); await p.waitForTimeout(60); }
+    ok(lo.low && lo.cls && lo.lab === '抽' && lo.sm === '▼' && +lo.op < 0.8, `[${tag}] ball coming in low (meets me at ${lo.z && lo.z.toFixed(2)} m) -> 殺球 dims and reads 「抽 ▼」 (debounced) (opacity ${lo.op})`);
+    if (tag !== 'landscape_844x390') { await p.screenshot({ path: SHOT + `smash_button_low_${tag}.png` }); await incoming(p, 0.5, 0.5); await p.waitForTimeout(450); }
     const h0 = await p.evaluate(() => __pb.hitCount[__pb.seat] || 0);
     await tapEl('#tbSmash'); await p.waitForTimeout(150);
     const tp = await p.evaluate(() => ({ t: document.getElementById('tip').textContent, hid: document.getElementById('tip').classList.contains('hide'), warn: document.getElementById('tip').classList.contains('warn') }));
@@ -30,7 +30,7 @@ let fails = 0; const ok = (c, t) => { console.log((c ? 'PASS ' : 'FAIL ') + t); 
     ok(sw === 'drive', `[${tag}] the low 殺球 is played as a (power) drive: ${sw}`);
     if (tag !== 'landscape_844x390') await p.screenshot({ path: SHOT + `low_ball_hint_${tag}.png` });
     // high ball: label back to 殺球, a real smash with shake + flash + smash sound
-    await p.waitForTimeout(400); await incoming(p, 1.75, 0.6); await p.evaluate(() => { const m = __pb.m; m.bounces = 0; Object.assign(m.ball, { x: -1.4, z: 1.7, vx: -3.2, vz: 0.5 }); }); await p.waitForTimeout(40);
+    await p.waitForTimeout(400); await incoming(p, 1.75, 0.6); await p.evaluate(() => { const m = __pb.m; m.bounces = 0; Object.assign(m.ball, { x: -1.4, z: 1.7, vx: -3.2, vz: 0.5 }); m.hits++; }); await p.waitForTimeout(420);
     const hi = await p.evaluate(() => ({ lab: document.querySelector('#tbSmash b').textContent, low: __pb.smashLow, z: __pb.contactZ() }));
     const j0 = await p.evaluate(() => ({ n: __pb.juice.n, s: __pb.juice.sfx }));
     await tapEl('#tbSmash');

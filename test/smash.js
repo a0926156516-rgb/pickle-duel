@@ -32,7 +32,7 @@ function trial(diff, seed, z, shot, mode) {
 const pct = (a, b) => (b ? (100 * a / b).toFixed(0) + '%' : '—');
 // full matches: scripted human that smashes every high ball it meets vs each CPU level (see smashplay.js)
 process.env.G = process.env.G || '20';
-const P = require('./smashplay.js'), r = (k) => (P[k].winner + P[k].forced) / P[k].n;
+const P = require('./smashplay.js').run(), r = (k) => (P[k].winner + P[k].forced) / P[k].n;
 ok(r('1easy') >= 0.4 && r('1easy') <= 0.62, `1v1 easy: high-ball 殺球 wins ${(r('1easy') * 100).toFixed(0)}% outright / forced error (target 40–60%)`);
 ok(r('1hard') >= 0.19 && r('1hard') <= 0.32, `1v1 hard: high-ball 殺球 wins ${(r('1hard') * 100).toFixed(0)}% (target ≈25%)`);
 ok(r('1easy') > r('1normal') && r('1normal') > r('1hard') && r('2easy') > r('2hard'), 'winner rate falls with difficulty (1v1 and 2v2)');

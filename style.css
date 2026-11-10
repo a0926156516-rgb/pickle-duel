@@ -1,6 +1,6 @@
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;height:100%;overflow:hidden;background:#0d1b33;color:#fff;font-family:"PingFang TC","Noto Sans TC","Noto Sans CJK TC","Microsoft JhengHei",system-ui,sans-serif;touch-action:none;user-select:none;-webkit-user-select:none;overscroll-behavior:none}
-canvas#cv{position:fixed;inset:0;width:100vw;height:100vh;display:block}
+canvas#cv{position:fixed;left:0;top:0;width:100vw;height:100vh;height:var(--vh,100vh);display:block}
 .hide{display:none!important}
 button{font:inherit;color:inherit;cursor:pointer;border:0}
 input{font:inherit}
@@ -28,7 +28,7 @@ input{font:inherit}
 body.touchui #keys{display:none}
 body.touchui #tip{bottom:auto;top:calc(64px + env(safe-area-inset-top))}
 /* touch */
-#touch{position:fixed;inset:0;z-index:4;pointer-events:none}
+#touch{position:fixed;left:0;top:0;right:0;height:var(--vh,100%);z-index:4;pointer-events:none}
 #joyZone{position:absolute;left:0;top:60px;bottom:0;width:50%;pointer-events:auto}
 #joyBase{position:absolute;width:120px;height:120px;margin:-60px 0 0 -60px;border-radius:50%;background:rgba(255,255,255,.12);border:2px solid rgba(255,255,255,.3);left:110px;top:calc(100% - 110px);transition:opacity .2s;opacity:.55}
 #joyBase.on{opacity:1}
@@ -87,3 +87,15 @@ h2{font-size:14px;margin:12px 0 6px;opacity:.8;font-weight:700}
 #toast{position:fixed;left:50%;top:70px;transform:translateX(-50%);background:rgba(0,0,0,.8);padding:8px 16px;border-radius:20px;z-index:30;font-size:14px;pointer-events:none}
 @media (max-height:430px){.card{padding:10px 14px}.big{padding:9px 12px;font-size:15px}h2{margin:6px 0 4px}#rcode{font-size:34px}.logo h1{font-size:26px}.tm .sc{font-size:22px}#call{font-size:19px}}
 body:not(.touchui) #touch{display:none!important}
+
+/* landscape phone layout: move pad on the left edge, shot buttons stacked in a column on the right edge, both outside the court */
+body.land #joyZone{width:42%;top:48px}
+body.land #joyBase{left:calc(60px + env(safe-area-inset-left));top:calc(100% - 74px);width:104px;height:104px;margin:-52px 0 0 -52px}
+body.land #joyHint{left:calc(14px + env(safe-area-inset-left))}
+body.land #btns{right:calc(10px + env(safe-area-inset-right));bottom:calc(8px + env(safe-area-inset-bottom));width:98px;height:auto;top:52px}
+body.land #tbDrive{right:2px;bottom:0;width:92px;height:92px}
+body.land #tbDink{right:12px;bottom:102px;width:72px;height:72px}
+body.land #tbLob{right:12px;bottom:184px;width:72px;height:72px}
+@media (max-height:340px){body.land #tbDrive{width:80px;height:80px}body.land #tbDink{bottom:88px;width:62px;height:62px}body.land #tbLob{bottom:158px;width:62px;height:62px}}
+body.land.touchui #tip{top:auto;bottom:calc(8px + env(safe-area-inset-bottom))}
+#rot b{color:#ffe14d}

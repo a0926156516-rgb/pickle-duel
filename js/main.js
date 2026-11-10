@@ -23,29 +23,57 @@ let lastFrame = performance.now(), fps = 60, fpsAcc = 0, fpsN = 0;
 
 // ---------- canvas & projection ----------
 const cv = $('cv'), ctx = cv.getContext('2d');
-let W = 0, H = 0, DPR = 1, F = 1, CX = 0, HZ = 0, layer = null, layerR = 0;
-const D0 = 10.5, HC = 8.5, XC = 2.6;
-function proj(x, y, z) { const X = R * x, Y = R * y, s = F / (Y + D0); return [CX + (X - XC) * s, HZ + (HC - z) * s, s]; }
-function resize() {
-  DPR = Math.min(2, window.devicePixelRatio || 1);
-  W = innerWidth; H = innerHeight;
-  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
-  let minx = 1e9, maxx = -1e9, miny = 1e9, maxy = -1e9;
-  for (const X of [-8.4, 8.4]) for (const Y of [-4.4, 4.6]) for (const z of [0, 2.2]) {
-    const sx = (X - XC) / (Y + D0), sy = (HC - z) / (Y + D0);
-    minx = Math.min(minx, sx); maxx = Math.max(maxx, sx); miny = Math.min(miny, sy); maxy = Math.max(maxy, sy);
-  }
-  const top = 58, bot = 6;
-  F = Math.min((W - 10) / (maxx - minx), (H - top - bot) / (maxy - miny));
-  CX = W / 2 - F * (minx + maxx) / 2;
-  HZ = top + (H - top - bot - F * (maxy - miny)) / 2 - F * miny;
-  layer = null;
-  const portrait = H > W * 1.05 && matchMedia('(pointer:coarse)').matches;
-  $('rot').classList.toggle('hide', !portrait || rotDismissed);
+let W = 0, H = 0, DPR = 1, F = 1, CX = 0, CY = 0, layer = null, layerR = 0, layerKey = '';
+// landscape broadcast camera: court laid out horizontally (teams left/right, net vertical in the middle), pitched view from the near sideline.
+const TH = 1.08, CD = 17, KZ = 0.8, CT = Math.cos(TH), SN = Math.sin(TH);
+function g2(X, Y) { const dy = Y + CD * CT, dz = -CD * SN; const depth = dy * CT - dz * SN, up = dy * SN + dz * CT; return [X / depth, up / depth, 1 / depth]; }
+function proj(x, y, z) { const g = g2(R * x, R * y), s = F * g[2]; return [CX + F * g[0], CY - F * g[1] - (z || 0) * s * KZ, s]; }
+let rotDismissed = false, touchUI = false;
+function safeRect() {
+  const land = W >= H, tu = touchUI && state === 'play';
+  const left = tu ? (land ? Math.min(118, W * 0.15) : 8) : 8, right = tu ? (land ? Math.min(118, W * 0.15) : 8) : 8;
+  const top = H < 430 ? 46 : 62, bottom = tu && !land ? 190 : 6;
+  return { l: left, r: W - right, t: top, b: H - bottom };
 }
-let rotDismissed = false;
-addEventListener('resize', resize);
+function resize() {
+  DPR = Math.min(3, window.devicePixelRatio || 1);
+  const vv = window.visualViewport;
+  W = Math.max(1, Math.round(vv && vv.width ? Math.min(innerWidth, vv.width) : innerWidth) || 1);
+  H = Math.max(1, Math.round(vv && vv.height ? Math.min(innerHeight, vv.height) : innerHeight) || 1);
+  cv.width = Math.max(1, Math.round(W * DPR)); cv.height = Math.max(1, Math.round(H * DPR));
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  document.documentElement.style.setProperty('--vh', H + 'px');
+  // fit the court (and players standing on it) into the area not covered by HUD / touch controls
+  const S = safeRect(); let minx = 1e9, maxx = -1e9, miny = 1e9, maxy = -1e9;
+  const pts = [];
+  for (const X of [-C.HL - 0.4, C.HL + 0.4]) for (const Y of [-C.HW - 0.5, C.HW + 0.3]) pts.push([X, Y, 0]);
+  for (const X of [-C.HL, C.HL]) pts.push([X, C.HW + 0.4, 2.1]);
+  for (const [X, Y, z] of pts) { const g = g2(X, Y); const sx = g[0], sy = g[1] + z * g[2] * KZ; minx = Math.min(minx, sx); maxx = Math.max(maxx, sx); miny = Math.min(miny, sy); maxy = Math.max(maxy, sy); }
+  const aw = Math.max(40, S.r - S.l), ah = Math.max(40, S.b - S.t);
+  F = Math.min(aw / (maxx - minx), ah / (maxy - miny)); if (!(F > 1)) F = Math.max(1, F || 1);
+  CX = (S.l + S.r) / 2 - F * (minx + maxx) / 2;
+  CY = (S.t + S.b) / 2 + F * (miny + maxy) / 2;
+  layer = null;
+  const portrait = H > W * 1.05 && (touchUI || matchMedia('(pointer:coarse)').matches);
+  $('rot').classList.toggle('hide', !portrait || rotDismissed);
+  document.body.classList.toggle('land', W >= H); document.body.classList.toggle('port', W < H);
+}
+let rzT = 0; const rzSoon = () => { resize(); clearTimeout(rzT); rzT = setTimeout(resize, 250); };
+addEventListener('resize', rzSoon); addEventListener('orientationchange', rzSoon);
+if (window.visualViewport) visualViewport.addEventListener('resize', rzSoon);
 $('bRotOk').onclick = () => { rotDismissed = true; resize(); };
+// try to lock landscape after the first tap (works on Android Chrome, needs fullscreen there; iOS ignores)
+let lockTried = false;
+function tryLock() {
+  if (lockTried) return; lockTried = true;
+  const so = screen.orientation; if (!so || !so.lock) return;
+  so.lock('landscape').catch(() => { const de = document.documentElement; if (!document.fullscreenElement && de.requestFullscreen && matchMedia('(pointer:coarse)').matches) de.requestFullscreen({ navigationUI: 'hide' }).then(() => so.lock('landscape')).catch(() => {}); });
+}
+addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') { tryLock(); setTouch(true); } }, true);
+addEventListener('touchstart', () => setTouch(true), { capture: true, passive: true });
+addEventListener('mousemove', (e) => { if (e.movementX || e.movementY) { if (performance.now() - lastTouchAt > 800) setTouch(false); } }, true);
+let lastTouchAt = 0;
+function setTouch(on) { if (on) lastTouchAt = performance.now(); if (touchUI === on) return; touchUI = on; document.body.classList.toggle('touchui', on); resize(); }
 
 function quad(c, pts, fill) { c.beginPath(); pts.forEach((p, i) => { const q = proj(p[0], p[1], p[2] || 0); i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]); }); c.closePath(); c.fillStyle = fill; c.fill(); }
 function lineQ(c, x1, y1, x2, y2, w, col) { // ground line as quad
@@ -67,8 +95,8 @@ function buildLayer() {
   for (let row = 0; row < 5; row++) for (let k = -38; k < 38; k += 0.55) {
     const z = 1.5 + row * 0.55, q = proj(R * (k + rnd() * 0.3), R * wy, z), s = q[2];
     c.fillStyle = crowd[(rnd() * crowd.length) | 0]; c.globalAlpha = 0.55 + rnd() * 0.3;
-    c.beginPath(); c.arc(q[0], q[1], s * 0.17, 0, 7); c.fill();
-    c.fillRect(q[0] - s * 0.17, q[1] + s * 0.12, s * 0.34, s * 0.3);
+    c.beginPath(); c.arc(q[0], q[1], Math.max(0, s * 0.17), 0, 7); c.fill();
+    c.fillRect(q[0] - s * 0.17, q[1] + s * 0.12, Math.max(0, s * 0.34), Math.max(0, s * 0.3));
   }
   c.globalAlpha = 1;
   // ad board
@@ -76,11 +104,11 @@ function buildLayer() {
   c.fillStyle = 'rgba(255,255,255,.9)'; c.textAlign = 'center';
   for (const k of [-9, 0, 9]) { const q = proj(R * k, R * wy, 0.32); c.font = `900 ${Math.max(9, q[2] * 0.55)}px sans-serif`; c.fillText('PICKLE DUEL  匹克球對決', q[0], q[1]); }
   // floor
-  quad(c, [[-40, -8.5], [40, -8.5], [40, wy], [-40, wy]].map((p) => [R * p[0], R * p[1]]), '#2a8a5e');
+  quad(c, [[-40, -14], [40, -14], [40, wy], [-40, wy]].map((p) => [R * p[0], R * p[1]]), '#2a8a5e');
   const fg = c.createLinearGradient(0, proj(0, R * wy, 0)[1], 0, H); fg.addColorStop(0, 'rgba(0,0,0,.25)'); fg.addColorStop(1, 'rgba(0,0,0,0)');
   c.fillStyle = fg; c.fillRect(0, proj(0, R * wy, 0)[1], W, H);
   // run-off and court
-  quad(c, [[-9.1, -5.0], [9.1, -5.0], [9.1, 5.0], [-9.1, 5.0]], '#2f7d4f');
+  quad(c, [[-9.6, -5.6], [9.6, -5.6], [9.6, 5.3], [-9.6, 5.3]], '#2f7d4f');
   quad(c, [[-C.HL, -C.HW], [C.HL, -C.HW], [C.HL, C.HW], [-C.HL, C.HW]], '#2563b6');
   quad(c, [[-C.K, -C.HW], [C.K, -C.HW], [C.K, C.HW], [-C.K, C.HW]], '#3d86d8');
   c.font = `800 ${F * 0.03}px sans-serif`;
@@ -102,16 +130,18 @@ function buildLayer() {
 const fx = []; // effects
 const trail = [];
 function drawNet(c) {
-  const N = 28, top = [], bot = [];
-  for (let i = 0; i <= N; i++) { const y = -C.NET_HALF + (2 * C.NET_HALF * i) / N; top.push(proj(0, y, PB.netH(Math.min(Math.abs(y), C.HW) * Math.sign(y)))); bot.push(proj(0, y, 0.04)); }
+  const N = 24, top = [], bot = [], sk = 0.22; // sk: draw the net's height slightly to the right so it reads as a band, not an edge-on line
+  for (let i = 0; i <= N; i++) { const y = -C.NET_HALF + (2 * C.NET_HALF * i) / N, h = PB.netH(Math.min(Math.abs(y), C.HW) * Math.sign(y)); const g = proj(0, y, 0), t = proj(0, y, h); bot.push(g); top.push([t[0] + h * g[2] * sk, t[1], g[2]]); }
+  // shadow on the floor
+  c.fillStyle = 'rgba(0,0,0,.18)'; c.beginPath(); bot.forEach((q, i) => (i ? c.lineTo(q[0] + q[2] * 0.35, q[1]) : c.moveTo(q[0] + q[2] * 0.35, q[1]))); for (let i = N; i >= 0; i--) c.lineTo(bot[i][0], bot[i][1]); c.closePath(); c.fill();
   c.beginPath(); top.forEach((q, i) => (i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]))); for (let i = N; i >= 0; i--) c.lineTo(bot[i][0], bot[i][1]); c.closePath();
-  c.fillStyle = 'rgba(15,20,30,.38)'; c.fill();
-  c.strokeStyle = 'rgba(230,235,245,.28)'; c.lineWidth = 1;
-  c.beginPath(); for (let i = 0; i <= N; i++) { c.moveTo(top[i][0], top[i][1]); c.lineTo(bot[i][0], bot[i][1]); }
-  for (let k = 1; k < 6; k++) { for (let i = 0; i <= N; i++) { const x = bot[i][0] + (top[i][0] - bot[i][0]) * k / 6, y = bot[i][1] + (top[i][1] - bot[i][1]) * k / 6; i ? c.lineTo(x, y) : c.moveTo(x, y); } }
+  c.fillStyle = 'rgba(15,20,30,.42)'; c.fill();
+  c.strokeStyle = 'rgba(230,235,245,.35)'; c.lineWidth = 1; c.beginPath();
+  for (let i = 0; i <= N; i++) { c.moveTo(top[i][0], top[i][1]); c.lineTo(bot[i][0], bot[i][1]); }
+  for (let k = 1; k < 5; k++) { for (let i = 0; i <= N; i++) { const x = bot[i][0] + (top[i][0] - bot[i][0]) * k / 5, y = bot[i][1] + (top[i][1] - bot[i][1]) * k / 5; i ? c.lineTo(x, y) : c.moveTo(x, y); } }
   c.stroke();
-  c.strokeStyle = '#fff'; c.lineWidth = Math.max(2, top[N >> 1][2] * 0.07); c.beginPath(); top.forEach((q, i) => (i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]))); c.stroke();
-  for (const y of [-C.NET_HALF, C.NET_HALF]) { const a = proj(0, y, 0), b = proj(0, y, C.NET_S + 0.05); c.strokeStyle = '#222'; c.lineWidth = Math.max(3, a[2] * 0.09); c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke(); }
+  c.strokeStyle = '#fff'; c.lineWidth = Math.max(2, top[N >> 1][2] * 0.06); c.beginPath(); top.forEach((q, i) => (i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]))); c.stroke();
+  for (const i of [0, N]) { const a = bot[i], b = top[i]; c.strokeStyle = '#222'; c.lineWidth = Math.max(3, a[2] * 0.08); c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1] - a[2] * 0.06); c.stroke(); }
 }
 function rr(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
 function drawPlayer(c, p, me) {
@@ -192,10 +222,11 @@ function render(dt) {
   drawShadow(ctx, bv);
   const objs = m.players.map((p) => ({ k: 'p', p, x: (p.rp || p).x, y: (p.rp || p).y }));
   objs.push({ k: 'b', x: bv.x, y: bv.y });
-  const left = objs.filter((o) => R * o.x < 0).sort((a, c) => R * c.y - R * a.y);
-  const right = objs.filter((o) => R * o.x >= 0).sort((a, c) => R * c.y - R * a.y);
+  objs.sort((a, c) => R * c.y - R * a.y);
   const draw = (o) => (o.k === 'p' ? drawPlayer(ctx, o.p, o.p.i === mySeat && role !== 'spectator') : drawBall(ctx, bv));
-  left.forEach(draw); drawNet(ctx); right.forEach(draw);
+  const farBall = objs.find((o) => o.k === 'b');
+  // the net is drawn under everything except objects on the far side of it that are low enough to be hidden by it
+  drawNet(ctx); objs.forEach(draw); void farBall;
   if (m.phase === 'rally') { trail.push({ ...bv }); if (trail.length > 9) trail.shift(); } else trail.length = 0;
   if (QS.get('fps') === '1') { ctx.fillStyle = '#fff'; ctx.font = '12px monospace'; ctx.textAlign = 'left'; ctx.fillText(fps.toFixed(0) + ' fps', 8, H - 8); }
 }
@@ -286,7 +317,7 @@ const keys = {};
 const inp = { jx: 0, jy: 0, shot: 'drive', shotT: -9, seq: 0 };
 addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT') return;
-  keys[e.code] = true; audio();
+  keys[e.code] = true; audio(); if (!e.repeat && touchUI && performance.now() - lastTouchAt > 800) setTouch(false);
   const map = { KeyJ: 'drive', Space: 'drive', KeyK: 'dink', KeyL: 'lob', KeyZ: 'drive', KeyX: 'dink', KeyC: 'lob' };
   if (map[e.code] && !e.repeat) { press(map[e.code]); e.preventDefault(); }
   if (e.code === 'Escape' && state === 'play') togglePause();
@@ -304,15 +335,15 @@ function press(shot) {
 const joy = { id: null, ox: 0, oy: 0 };
 const jb = $('joyBase'), jk = $('joyKnob'), jz = $('joyZone');
 function joyPos(cx, cy) { const dx = cx - joy.ox, dy = cy - joy.oy, l = Math.hypot(dx, dy), max = 52, k = l > max ? max / l : 1; jk.style.transform = `translate(${dx * k}px,${dy * k}px)`; const n = Math.min(1, l / max); inp.jx = l > 6 ? (dx / l) * n : 0; inp.jy = l > 6 ? (-dy / l) * n : 0; }
-jz.addEventListener('pointerdown', (e) => { audio(); document.body.classList.add('touchui'); joy.id = e.pointerId; const r = jz.getBoundingClientRect(); joy.ox = e.clientX; joy.oy = e.clientY; jb.style.left = e.clientX - r.left + 'px'; jb.style.top = e.clientY - r.top + 'px'; jb.classList.add('on'); joyPos(e.clientX, e.clientY); try { jz.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); });
+jz.addEventListener('pointerdown', (e) => { audio(); setTouch(true); joy.id = e.pointerId; const r = jz.getBoundingClientRect(); joy.ox = e.clientX; joy.oy = e.clientY; jb.style.left = e.clientX - r.left + 'px'; jb.style.top = e.clientY - r.top + 'px'; jb.classList.add('on'); joyPos(e.clientX, e.clientY); try { jz.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); });
 jz.addEventListener('pointermove', (e) => { if (e.pointerId === joy.id) joyPos(e.clientX, e.clientY); });
 const joyEnd = (e) => { if (e.pointerId !== joy.id) return; joy.id = null; inp.jx = inp.jy = 0; jk.style.transform = ''; jb.classList.remove('on'); };
 jz.addEventListener('pointerup', joyEnd); jz.addEventListener('pointercancel', joyEnd);
 document.querySelectorAll('.tb').forEach((b) => {
-  b.addEventListener('pointerdown', (e) => { audio(); document.body.classList.add('touchui'); b.classList.add('on'); press(b.dataset.shot); e.preventDefault(); });
+  b.addEventListener('pointerdown', (e) => { audio(); setTouch(true); b.classList.add('on'); press(b.dataset.shot); e.preventDefault(); });
   const up = () => b.classList.remove('on'); b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); b.addEventListener('pointerleave', up);
 });
-if (matchMedia('(pointer:coarse)').matches || 'ontouchstart' in window) document.body.classList.add('touchui');
+if (matchMedia('(pointer:coarse)').matches) setTouch(true);
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 document.addEventListener('gesturestart', (e) => e.preventDefault());
 
@@ -373,7 +404,7 @@ function beginMatch(cfg) {
   ['menu', 'room', 'end', 'pause', 'rules'].forEach((i) => $(i).classList.add('hide'));
   ['hud', 'touch', 'keys'].forEach((i) => $(i).classList.remove('hide'));
   if (role !== 'client') { const evs = m.events.splice(0); evs.forEach(handleEvent); if (role === 'host') outbox.push(...evs); }
-  updHUD();
+  updHUD(); resize();
 }
 function endGame() {
   if (!m) return; state = 'end';
@@ -390,7 +421,7 @@ function endGame() {
 function toMenu(msg) {
   state = 'menu'; m = null; role = 'local'; R = 1; layer = null;
   ['room', 'end', 'pause', 'hud', 'touch', 'keys', 'tip', 'msg'].forEach((i) => $(i).classList.add('hide'));
-  $('menu').classList.remove('hide'); st(msg || '');
+  $('menu').classList.remove('hide'); st(msg || ''); resize();
 }
 function togglePause() {
   if (state !== 'play') return;
@@ -613,6 +644,9 @@ $('bStart').onclick = () => { SFX.click(); hostStart(); };
 
 // ---------- main loop ----------
 function frame(now) {
+  try { frameBody(now); } catch (err) { if (!frame.w2) { frame.w2 = 1; console.warn('frame recovered', err && err.message); } }
+}
+function frameBody(now) {
   let dt = (now - lastFrame) / 1000; lastFrame = now; if (!(dt > 0)) dt = 1 / 60; dt = Math.min(dt, 0.05);
   fpsAcc += dt; fpsN++; if (fpsAcc > 0.5) { fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0; }
   if (m && (state === 'play' || state === 'end')) {
@@ -625,11 +659,11 @@ function frame(now) {
     } else clientTick(dt);
     updHUD();
   }
-  render(dt);
-  requestAnimationFrame(frame);
+  try { render(dt); } catch (err) { layer = null; if (!frame.warned) { frame.warned = 1; console.warn('render recovered', err && err.message); } }
 }
 resize();
-requestAnimationFrame(frame);
+function loop(now) { frame(now); requestAnimationFrame(loop); }
+requestAnimationFrame(loop);
 // test hooks
-window.__pb = { get m() { return m; }, get state() { return state; }, get role() { return role; }, get room() { return roomCode; }, get roster() { return roster; }, get net() { return net; }, get fps() { return fps; }, get seat() { return mySeat; }, hitCount, startLocal, press };
+window.__pb = { get m() { return m; }, proj, get view() { return { W, H, F, touchUI, safe: safeRect() }; }, get state() { return state; }, get role() { return role; }, get room() { return roomCode; }, get roster() { return roster; }, get net() { return net; }, get fps() { return fps; }, get seat() { return mySeat; }, hitCount, startLocal, press };
 })();

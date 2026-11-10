@@ -7,8 +7,10 @@ const C = {
   K: 2.134,       // non-volley zone (kitchen) depth from net — 7 ft
   NET_C: 0.864, NET_S: 0.914, NET_HALF: 3.35,
   R: 0.037, G: 9.81, REACH: 1.0, BOUNCE: 0.6, FRIC: 0.84,
+  PACE: 0.74,     // v5 「球速變慢」: every shot flies at 74% speed. Gravity is scaled by PACE² so each trajectory keeps the same shape (same arcs, bounces, net clearance), just slower.
   SPEED: 5.3, DT: 1 / 120
 };
+C.G = 9.81 * C.PACE * C.PACE;
 const DIFF = {
   easy:   { sig: 0.55, err: 0.09,  speed: 4.3, react: 0.32, skill: 0.45, drive: 10.5, drop: 0.25, tire: 14 },
   normal: { sig: 0.38, err: 0.05,  speed: 4.9, react: 0.2,  skill: 0.7,  drive: 12,   drop: 0.45, tire: 10 },
@@ -102,20 +104,20 @@ function holdBall(m) {
 
 // ---- ballistics ----
 function launch(from, tx, ty, T, clr) {
-  let vx = 0, vy = 0, vz = 0;
+  let vx = 0, vy = 0, vz = 0; T /= C.PACE; // flight times are tuned at full pace; slow them all by the same factor
   for (let k = 0; k < 60; k++) {
     vx = (tx - from.x) / T; vy = (ty - from.y) / T; vz = (C.R - from.z + 0.5 * C.G * T * T) / T;
     const tc = (0 - from.x) / vx;
     if (!(tc > 0 && tc < T)) break;
     const zc = from.z + vz * tc - 0.5 * C.G * tc * tc, yc = from.y + vy * tc;
     if (zc >= netH(yc) + clr) break;
-    T += 0.035;
+    T += 0.035 / C.PACE;
   }
   return { vx, vy, vz };
 }
 function predict(m) {
   const b = { ...m.ball }; const out = []; let bo = m.bounces; const dt = 1 / 60;
-  for (let t = dt; t < 3.5; t += dt) {
+  for (let t = dt; t < 3.5 / C.PACE; t += dt) {
     b.vz -= C.G * dt; b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt;
     if (b.z <= C.R && b.vz < 0) { b.z = C.R; b.vz = -b.vz * C.BOUNCE; b.vx *= C.FRIC; b.vy *= C.FRIC; bo++; if (bo === 1 + m.bounces) out.firstBounce = { x: b.x, y: b.y }; }
     out.push({ t, x: b.x, y: b.y, z: b.z, b: bo });
@@ -131,7 +133,7 @@ function makeShot(m, p, shot, aimY, aiTarget) {
   const D = DIFF[m.diff], o = 1 - p.team, xs = teamSign(o), b = m.ball, r = m.r;
   const dist = Math.hypot(b.x - p.x, b.y - p.y);
   const stretch = clamp(dist / C.REACH, 0, 1.2);
-  const tire = 1 + m.rally / (human ? 14 : D.tire * (m.mode === 2 ? 0.8 : 1)); // long rallies get harder to sustain (CPU tires faster on hard/doubles so points don't drag)
+  const tire = 1 + m.rally / (human ? 14 : D.tire * (m.mode === 2 ? 0.8 : 1) * C.PACE * 0.85); // CPU tires a bit sooner at the slower v5 pace so rallies stay about as long as before // long rallies get harder to sustain (CPU tires faster on hard/doubles so points don't drag)
   const sig = (human ? HUMAN.sig : D.sig) * (0.7 + 0.6 * stretch) * (b.z < 0.25 ? 1.25 : 1) * Math.sqrt(tire);
   const perr = (human ? HUMAN.err : D.err) * (human ? 1 : Math.pow(tire, 1.7));
   const from = { x: b.x, y: b.y, z: Math.max(b.z, 0.12) };
@@ -150,7 +152,7 @@ function makeShot(m, p, shot, aimY, aiTarget) {
     const k = r();
     if (k < 0.45) { v.vz *= 0.55; v.vx *= 0.9; }           // into the net
     else if (k < 0.75) { v.vx *= 1.22; v.vy *= 1.1; }       // long
-    else { v.vy += (r() < 0.5 ? -1 : 1) * 2.5; }          // wide
+    else { v.vy += (r() < 0.5 ? -1 : 1) * 2.5 * C.PACE; }          // wide
   }
   b.vx = v.vx; b.vy = v.vy; b.vz = v.vz; b.z = from.z;
   p.swing = 1; p.swingShot = kind;

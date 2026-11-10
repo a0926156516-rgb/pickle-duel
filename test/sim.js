@@ -32,5 +32,12 @@ for (const mode of [1, 2]) for (const diff of ['easy', 'normal', 'hard']) for (l
   for (const f in r.faults) agg[f] = (agg[f] || 0) + r.faults[f];
 }
 console.log('fault reasons:', agg);
+// v5 「球速變慢」: ball speed right after each hit, versus the v4 pace (drive ≈11.3, dink ≈4.3, lob ≈5.5, serve ≈10.0 m/s)
+{ const REF = { drive: 11.25, dink: 4.27, lob: 5.52, smash: 17.25, serve: 9.99 }, acc = {};
+  for (const mode of [1, 2]) for (let seed = 1; seed <= 6; seed++) { const m = PB.createMatch({ mode, diff: 'normal', seed, target: 11, seats: [] }); let pend = null;
+    for (let i = 0; i < 60 * 60 * 20 && m.phase !== 'over'; i++) { PB.step(m, 1 / 60); for (const e of m.events) if (e.k === 'hit' || e.k === 'serve') pend = e; m.events.length = 0;
+      if (pend) { const k = pend.k === 'serve' ? 'serve' : pend.shot, v = Math.hypot(m.ball.vx, m.ball.vy); (acc[k] = acc[k] || []).push(v); pend = null; } } }
+  for (const k of ['serve', 'drive', 'dink', 'lob']) { const a = acc[k] || [], mean = a.reduce((x, y) => x + y, 0) / (a.length || 1), ratio = mean / REF[k];
+    console.log(`pace ${k.padEnd(5)} ${mean.toFixed(2)} m/s = ${(ratio * 100).toFixed(0)}% of v4 (${a.length} shots)`); assert(a.length > 20 && ratio >= 0.68 && ratio <= 0.77, `${k} pace ${ratio.toFixed(2)} should be 25–30% slower`); } }
 console.log(fails ? `FAILED ${fails}` : 'ALL SIM CHECKS PASSED');
 process.exit(fails ? 1 : 0);

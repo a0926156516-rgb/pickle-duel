@@ -43,8 +43,14 @@ let state = 'menu';        // menu | room | play | end
 let role = 'local';        // local | host | client
 let m = null;              // match (authoritative for local/host, a mirrored view for clients)
 let mySeat = 0, R = 1, paused = false;
-let opt = { diff: 'normal', target: 11, mode: 2, ch: 0, co: 1 };
-try { Object.assign(opt, JSON.parse(localStorage.pbOpt || '{}')); } catch (_) {}
+let opt = { diff: 'normal', target: 11, mode: 2, ch: 0, co: 1, orient: 'port' };
+try { Object.assign(opt, JSON.parse(localStorage.pbOpt || '{}')); if (localStorage.pbOrient) opt.orient = localStorage.pbOrient; } catch (_) {}
+if (QS.get('orient') === 'land' || QS.get('orient') === 'port') opt.orient = QS.get('orient');
+// 橫向 on a phone held upright (rotation lock / in-app webview): the whole page is rotated 90° with CSS and played sideways.
+// App coordinates (W×H, landscape) <-> physical coordinates (portrait): phys = (PW - ay, ax), app = (py, PW - px).
+let FORCED = false, PW = 0, PH = 0;
+const appXY = (cx, cy) => (FORCED ? [cy, PW - cx] : [cx, cy]);
+function appRect(el) { const r = el.getBoundingClientRect(); if (!FORCED) return r; const [x1, y1] = appXY(r.left, r.top), [x2, y2] = appXY(r.right, r.bottom); const l = Math.min(x1, x2), t = Math.min(y1, y2), w = Math.abs(x2 - x1), h = Math.abs(y2 - y1); return { left: l, top: t, right: l + w, bottom: t + h, width: w, height: h, x: l, y: t }; }
 const AUTO = QS.get('auto') === '1';   // autopilot for testing / demo
 let lastFrame = performance.now(), fps = 60, fpsAcc = 0, fpsN = 0;
 
@@ -70,7 +76,7 @@ let touchUI = false;
 function safeRect() {
   const land = W >= H, tu = (touchUI || COARSE) && state === 'play';
   if (PORT) { // controls live below the court
-    const top = H < 700 ? 100 : 106, bottom = tu ? (H < 780 ? 170 : 212) : 8;
+    const top = H < 700 ? 106 : 114, bottom = tu ? (H < 780 ? 170 : 212) : 8;
     return { l: 6, r: W - 6, t: top, b: H - bottom };
   }
   const left = tu ? Math.min(118, W * 0.15) : 8, right = tu ? Math.min(118, W * 0.15) : 8;
@@ -80,8 +86,11 @@ function safeRect() {
 function resize() {
   DPR = Math.min(3, window.devicePixelRatio || 1);
   const vv = window.visualViewport;
-  W = Math.max(1, Math.round(vv && vv.width ? Math.min(innerWidth, vv.width) : innerWidth) || 1);
-  H = Math.max(1, Math.round(vv && vv.height ? Math.min(innerHeight, vv.height) : innerHeight) || 1);
+  PW = Math.max(1, Math.round(vv && vv.width ? Math.min(innerWidth, vv.width) : innerWidth) || 1);
+  PH = Math.max(1, Math.round(vv && vv.height ? Math.min(innerHeight, vv.height) : innerHeight) || 1);
+  FORCED = opt.orient === 'land' && PH > PW; // a phone that is really sideways just uses the normal landscape layout
+  W = FORCED ? PH : PW; H = FORCED ? PW : PH;
+  { const ds = document.documentElement.style; ds.setProperty('--aw', W + 'px'); ds.setProperty('--ah', H + 'px'); ds.setProperty('--pw', PW + 'px'); ds.setProperty('--vvt', Math.round(vv && vv.offsetTop || 0) + 'px'); document.body.classList.toggle('forced', FORCED); }
   cv.width = Math.max(1, Math.round(W * DPR)); cv.height = Math.max(1, Math.round(H * DPR));
   cv.style.width = W + 'px'; cv.style.height = H + 'px';
   document.documentElement.style.setProperty('--vh', H + 'px');
@@ -91,7 +100,7 @@ function resize() {
   // fit the court (and players standing on it) into the area not covered by HUD / touch controls
   const S = safeRect(); let minx = 1e9, maxx = -1e9, miny = 1e9, maxy = -1e9;
   const pts = [];
-  if (PORT) { for (const U of [-C.HW - 0.25, C.HW + 0.25]) for (const V of [-C.K - 0.6, C.HL + 0.25]) pts.push([U, V, 0]); pts.push([0, -C.HL - 0.5, 0]); for (const U of [-C.HW, C.HW]) pts.push([U, C.HL, 2.0]); pts.push([0, C.HL + 0.6, 2.75]); } // far players' heads + name tags stay below the HUD
+  if (PORT) { for (const U of [-C.HW - 0.25, C.HW + 0.25]) for (const V of [-C.K - 0.6, C.HL + 0.25]) pts.push([U, V, 0]); pts.push([0, -C.HL - 0.5, 0]); for (const U of [-C.HW, C.HW]) pts.push([U, C.HL, 2.0]); pts.push([0, C.HL + 0.6, 3.0]); } // far players' heads + name tags stay below the HUD
   else { for (const X of [-C.HL - 0.4, C.HL + 0.4]) for (const Y of [-C.HW - 0.5, C.HW + 0.3]) pts.push([X, Y, 0]); for (const X of [-C.HL, C.HL]) pts.push([X, C.HW + 0.4, 2.1]); }
   for (const [X, Y, z] of pts) { const g = g2(X, Y); const sx = g[0], sy = g[1] + z * g[2] * KZ; minx = Math.min(minx, sx); maxx = Math.max(maxx, sx); miny = Math.min(miny, sy); maxy = Math.max(maxy, sy); }
   const aw = Math.max(40, S.r - S.l), ah = Math.max(40, S.b - S.t);
@@ -99,8 +108,9 @@ function resize() {
   CX = (S.l + S.r) / 2 - F * (minx + maxx) / 2;
   CY = (S.t + S.b) / 2 + F * (miny + maxy) / 2;
   { const ds = document.documentElement.style, sp = PAN; PAN = 0; // screen rows of the net and both kitchens: prompts go where players are not
-    ds.setProperty('--nety', Math.round(pv(0, 0, 0)[1]) + 'px'); ds.setProperty('--nk', Math.round(pv(0, -C.K * 0.55, 0)[1]) + 'px'); ds.setProperty('--fk', Math.round(pv(0, C.K * 0.5, 0)[1]) + 'px'); PAN = sp; }
-  layer = null;
+    ds.setProperty('--nety', Math.round(pv(0, 0, 0)[1]) + 'px'); ds.setProperty('--nk', Math.round(pv(0, -C.K * 0.55, 0)[1]) + 'px'); ds.setProperty('--fk', Math.round(pv(0, C.K * 0.5, 0)[1]) + 'px');
+    const bl = pv(0, -C.HL - 0.35, 0)[1], lo = Math.min(S.b + (H - S.b > 60 ? 4 : 0), H - 30); ds.setProperty('--tipy', Math.round(Math.max(bl + 14, Math.min((bl + lo) / 2, lo - 12))) + 'px'); PAN = sp; } // hints: below my baseline, out of the ball's flight band
+  layer = null; requestAnimationFrame(measureHud);
   document.body.classList.toggle('land', W >= H); document.body.classList.toggle('port', W < H);
 }
 let rzT = 0; const rzSoon = () => { resize(); clearTimeout(rzT); rzT = setTimeout(resize, 250); };
@@ -195,6 +205,8 @@ function drawNet(c) {
 }
 function rr(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
 const teamCo = (t) => { if (!m) return t; const q = m.players.find((pp) => pp.team === t); return q && q.co != null ? q.co : t; };
+let hudBlock = [], tagRects = [], lastTags = [], fpsY = 0; // screen rects of the scoreboard + brand (name tags are kept below them)
+function measureHud() { hudBlock = []; for (const id of ['board', 'brand']) { const e = $(id); if (!e || !e.offsetParent && getComputedStyle(e).position !== 'fixed') continue; const r = appRect(e); if (r.width && r.height) hudBlock.push({ l: r.left - 4, r: r.right + 4, b: r.bottom }); } }
 function drawPlayer(c, p, me) {
   const PM_ = PORT || H < 430 ? 1.32 : 1, minS = PORT ? (H * 0.066) / (1.72 * KZ * PM_) : 0; // far-court players never shrink below ~6.6% of the screen height
   const pos = p.rp || p; const q = proj(pos.x, pos.y, 0), s = Math.max(q[2], minS), x = q[0], y = q[1];
@@ -236,7 +248,10 @@ function drawPlayer(c, p, me) {
   // label
   const nm = (me ? '▼ ' : '') + p.name;
   c.font = `800 ${Math.max(10, Math.min(14, s * 0.2))}px sans-serif`; c.textAlign = 'center';
-  const tw = c.measureText(nm).width + 10, ly = y - BODY * k * 1.06 - 4;
+  const tw = c.measureText(nm).width + 10; let ly = y - BODY * k * 1.06 - 4;
+  const srvTag = m && m.phase === 'serve' && m.server === p.i;
+  for (const r of hudBlock) if (x + tw / 2 > r.l && x - tw / 2 < r.r && ly - 13 - (srvTag ? 16 : 0) < r.b + 3) ly = r.b + 3 + 13 + (srvTag ? 16 : 0); // never under the scoreboard / brand
+  tagRects.push({ i: p.i, l: x - tw / 2, t: ly - 13 - (srvTag ? 16 : 0), r: x + tw / 2, b: ly + 4 });
   c.fillStyle = me ? 'rgba(255,225,77,.95)' : tcol; c.globalAlpha = me ? 1 : 0.88; rr(c, x - tw / 2, ly - 13, tw, 17, 8); c.fill(); c.globalAlpha = 1;
   c.strokeStyle = tcol; c.lineWidth = 2; c.stroke();
   c.fillStyle = me ? '#13213f' : '#fff'; c.save(); if (!me) { c.shadowColor = 'rgba(0,0,0,.6)'; c.shadowBlur = 2; } c.fillText(nm, x, ly); c.restore();
@@ -245,7 +260,7 @@ function drawPlayer(c, p, me) {
 let lastBallR = 0;
 function drawBall(c, b) {
   const q = proj(b.x, b.y, b.z), s = q[2];
-  const BS = PORT || H < 430 ? 1.5 : 1, r = Math.max(BS > 1 ? 4.4 : 3.4, s * C.R * 2.4) * BS; // phones: bigger ball (and never a speck at the far end)
+  const BS = (PORT || H < 430 ? 1.5 : 1) * (Math.min(W, H) <= 375 ? 1.12 : 1), r = Math.max(BS > 1 ? 4.4 : 3.4, s * C.R * 2.4) * BS; // phones: bigger ball (and never a speck at the far end); a bit more on ≤375px
   lastBallR = r;
   if (trail.length > 1) { // glowing ribbon
     c.save(); c.lineCap = 'round'; c.lineJoin = 'round'; c.shadowColor = '#ffe94a'; c.shadowBlur = 12;
@@ -257,7 +272,7 @@ function drawBall(c, b) {
   const gr = c.createRadialGradient(q[0] - r * 0.35, q[1] - r * 0.35, r * 0.1, q[0], q[1], r);
   gr.addColorStop(0, '#ffffd0'); gr.addColorStop(0.6, '#f4f53a'); gr.addColorStop(1, '#c9cf14');
   c.fillStyle = gr; c.beginPath(); c.arc(q[0], q[1], r, 0, 7); c.fill(); c.restore();
-  c.strokeStyle = 'rgba(25,18,0,.9)'; c.lineWidth = Math.max(1.3, r * 0.22); c.beginPath(); c.arc(q[0], q[1], r, 0, 7); c.stroke(); // dark outline for contrast
+  { const lw = Math.max(1.4, r * 0.2); c.strokeStyle = 'rgba(20,12,30,.95)'; c.lineWidth = lw; c.beginPath(); c.arc(q[0], q[1], r + lw * 0.5, 0, 7); c.stroke(); } // thin dark outline outside the yellow (no glow over it)
   c.fillStyle = 'rgba(140,150,10,.55)'; for (const [dx, dy] of [[-0.35, -0.1], [0.25, -0.35], [0.15, 0.35]]) { c.beginPath(); c.arc(q[0] + dx * r, q[1] + dy * r, r * 0.16, 0, 7); c.fill(); }
 }
 function drawShadow(c, b) {
@@ -299,12 +314,13 @@ function render(dt) {
   const objs = m.players.map((p) => ({ k: 'p', p, x: (p.rp || p).x, y: (p.rp || p).y }));
   objs.push({ k: 'b', x: bv.x, y: bv.y });
   objs.sort((a, c) => depthOf(c.x, c.y) - depthOf(a.x, a.y));
+  lastTags = tagRects; tagRects = [];
   const draw = (o) => (o.k === 'p' ? drawPlayer(ctx, o.p, o.p.i === mySeat && role !== 'spectator') : drawBall(ctx, bv));
   const farBall = objs.find((o) => o.k === 'b');
   // the net is drawn under everything except objects on the far side of it that are low enough to be hidden by it
   drawNet(ctx); objs.forEach(draw); void farBall;
   if (m.phase === 'rally' || m.phase === 'dead') { trail.push({ ...bv }); if (trail.length > 12) trail.shift(); } else trail.length = 0;
-  if (QS.get('fps') === '1') { ctx.fillStyle = '#fff'; ctx.font = '12px monospace'; ctx.textAlign = 'left'; ctx.fillText(fps.toFixed(0) + ' fps', 8, H - 8); }
+  if (QS.get('fps') === '1') { ctx.fillStyle = '#fff'; ctx.font = '12px monospace'; ctx.textAlign = 'left'; const kb = $('keys'), ky = kb.classList.contains('hide') || touchUI ? H - 8 : Math.min(H - 8, appRect(kb).top - 6); ctx.fillText(fps.toFixed(0) + ' fps', 8, ky); fpsY = ky; }
 }
 
 // ---------- audio ----------
@@ -339,9 +355,33 @@ $('bSound').textContent = sound ? '🔊' : '🔇';
 // ---------- messages / HUD ----------
 let hintKey = '', hintPt = null;
 let msgTimer = 0, lastFault = null, lastReason = ''; const hitCount = {};
+// portrait hints: below my baseline (out of the ball's flight band); if I'm standing there, on the far kitchen instead
+function placeTip() {
+  const e = $('tip'); if (!PORT || e.classList.contains('hide')) { if (e.style.top) e.style.top = ''; return; }
+  const me = m.players[mySeat]; if (!me) return; const hh = (e.offsetHeight || 28) / 2 + 4;
+  const f = proj(me.x, me.y, 0), hd = proj(me.x, me.y, 2.3), y0 = hd[1] - 22, y1 = f[1] + 8;
+  const cs = getComputedStyle(document.documentElement), rows = [parseFloat(cs.getPropertyValue('--tipy')), parseFloat(cs.getPropertyValue('--fk'))].filter((v) => v > 0);
+  const clear = (y) => y + hh < y0 || y - hh > y1, cur = parseFloat(e.style.top);
+  if (cur && clear(cur)) return; const y = rows.find(clear); e.style.top = Math.round(y != null ? y : rows[rows.length - 1]) + 'px';
+}
+// prompts turn see-through while the ball flies behind them
+function dimOverBall() {
+  const q = proj(m.ball.x, m.ball.y, m.ball.z), pad = (lastBallR || 6) + 14;
+  for (const id of ['tip', 'msg']) { const e = $(id); if (e.classList.contains('hide')) { e.classList.remove('thru'); continue; }
+    const r = appRect(e); e.classList.toggle('thru', q[0] > r.left - pad && q[0] < r.right + pad && q[1] > r.top - pad && q[1] < r.bottom + pad); }
+}
+// landscape: fault / call box in the strip between the scoreboard and the top-right buttons + brand, never over them
+function placeMsgLand() {
+  const e = $('msg'), b = appRect($('board')), ic = appRect($('bPause')), br = appRect($('brand'));
+  const l = b.right + 8, r = Math.min(ic.left, br.width ? br.left : 1e9) - 8, w = r - l;
+  if (w >= 220) { e.style.left = Math.round((l + r) / 2) + 'px'; e.style.maxWidth = Math.round(w) + 'px'; e.style.top = Math.round(6 + (e.offsetHeight || 60) / 2) + 'px'; }
+  else { e.style.left = ''; e.style.maxWidth = Math.round(W * 0.6) + 'px'; e.style.top = Math.round(Math.max(b.bottom, br.bottom) + 6 + (e.offsetHeight || 60) / 2) + 'px'; }
+}
 // portrait: put the call/fault box on a court row that is clear of my own player (near kitchen, near backcourt, far kitchen)
 function placeMsg(force) {
-  const e = $('msg'); if (!PORT || e.classList.contains('hide')) { if (e.style.top) e.style.top = ''; return; }
+  const e = $('msg'); if (e.classList.contains('hide')) return;
+  if (!PORT) { if (force) placeMsgLand(); return; }
+  if (e.style.left) { e.style.left = ''; e.style.maxWidth = ''; }
   const me = m && m.players[mySeat]; if (!me) return; const hh = (e.offsetHeight || 60) * 0.6 + 8; // room for the pop-in scale
   const f = proj(me.x, me.y, 0), hd = proj(me.x, me.y, 2.3), y0 = hd[1] - 22, y1 = f[1] + 8; // head + name tag .. feet
   const rows = [pv(0, -C.K * 0.55, 0)[1], pv(0, -(C.K + C.HL) * 0.5 - 0.6, 0)[1], pv(0, C.K * 0.5, 0)[1], pv(0, 0, 0)[1] - hh * 0.4];
@@ -350,7 +390,7 @@ function placeMsg(force) {
   if (y == null) { const ov = (r) => Math.max(0, Math.min(r + hh, y1) - Math.max(r - hh, y0)); y = rows.reduce((a, r) => (ov(r) < ov(a) ? r : a), rows[0]); } // nothing fully clear: least overlap with me
   e.style.top = Math.round(y) + 'px';
 }
-function showMsg(a, b, cls, dur) { const e = $('msg'); $('msgA').textContent = a; $('msgB').textContent = b || ''; e.className = cls || 'info'; void e.offsetWidth; e.style.animation = 'none'; void e.offsetWidth; e.style.animation = ''; clearTimeout(msgTimer); msgTimer = setTimeout(() => e.classList.add('hide'), dur || 1700); e.style.top = ''; placeMsg(true); }
+function showMsg(a, b, cls, dur) { const e = $('msg'); $('msgA').textContent = a; $('msgB').textContent = b || ''; e.className = cls || 'info'; void e.offsetWidth; e.style.animation = 'none'; void e.offsetWidth; e.style.animation = ''; clearTimeout(msgTimer); msgTimer = setTimeout(() => e.classList.add('hide'), dur || 1700); e.style.top = ''; e.style.left = ''; e.style.maxWidth = ''; placeMsg(true); }
 function toast(t) { const e = $('toast'); e.textContent = t; e.classList.remove('hide'); clearTimeout(toast.t); toast.t = setTimeout(() => e.classList.add('hide'), 2600); }
 const teamOf = (i) => i % 2;
 function handleEvent(e) {
@@ -364,10 +404,17 @@ function handleEvent(e) {
     case 'point': case 'sideout': case 'second': {
       const mine = role !== 'spectator' && teamOf(mySeat) === (e.k === 'point' ? e.team : (lastFault ? 1 - lastFault.team : -1));
       (e.k === 'point' ? SFX.point : SFX.side)();
-      const who = lastFault && lastFault.who >= 0 && m.players[lastFault.who] ? m.players[lastFault.who].name + ' 失誤・' : '';
-      showMsg(lastFault ? lastFault.reason : '', who + e.text, mine ? 'good' : 'bad', 2300);
+      const spec = role === 'spectator', myT = teamOf(mySeat);
+      const rel = (i) => (spec ? '' : i === mySeat ? '（你）' : teamOf(i) === myT ? '（隊友）' : '（對手）');
+      const side = (t) => (spec ? m.teamNames[t] : t === myT ? '你方' : '對手');
+      const who = !lastFault ? '' : lastFault.who >= 0 && m.players[lastFault.who] ? m.players[lastFault.who].name + rel(lastFault.who) + ' 失誤・' : side(lastFault.team) + ' 失誤・';
+      const res = e.k === 'point' ? side(e.team) + '得分！' : e.k === 'sideout' ? '換' + side(e.team) + '發球（Side Out）' : e.text;
+      showMsg(lastFault ? lastFault.reason : '', who + res, mine ? 'good' : 'bad', 2300);
       lastReason = lastFault ? lastFault.reason : ''; lastFault = null; break; }
-    case 'call': showMsg(e.text, (e.first ? '開賽！' : lastReason ? '上一球：' + lastReason + '・' : '') + '發球：' + (m.players[e.server] ? m.players[e.server].name : ''), 'info call', lastReason ? 1700 : 1000); lastReason = ''; break;
+    case 'call': { const spec = role === 'spectator', ot = spec ? 0 : teamOf(mySeat);
+      showMsg('', (e.first ? '開賽！' : lastReason ? '上一球：' + lastReason + '・' : '') + (m.mode === 2 ? '報分 ' + e.text + '・' : '') + '發球：' + (m.players[e.server] ? m.players[e.server].name : ''), 'info call', lastReason ? 1700 : 1000);
+      $('msgA').innerHTML = `<span class="own">${spec ? esc(m.teamNames[0]) : '你'} ${m.score[ot]}</span> – ${m.score[1 - ot]} ${spec ? esc(m.teamNames[1]) : '對手'}`; // own team first, own score highlighted
+      lastReason = ''; break; }
     case 'win': SFX.win(); break;
     case 'over': endGame(); break;
   }
@@ -384,9 +431,12 @@ function updHUD() {
     $('nmL').innerHTML = names(lt); $('nmR').innerHTML = names(rt);
     $('scL').textContent = m.score[lt]; $('scR').textContent = m.score[rt];
     $('tmL').classList.toggle('serving', m.servingTeam === lt); $('tmR').classList.toggle('serving', m.servingTeam === rt);
-    $('call').textContent = PB.callText(m); $('hdr').textContent = `${m.mode === 2 ? '雙打' : '單打'}・${DIFF_NAME[m.diff] || ''}・${m.target}分`;
+    { const ow = m.score[lt], op = m.score[rt]; $('call').innerHTML = `<b class="own">${ow}</b><i>-</i>${op}`; } // own team first, like the rows
+    $('hdr').textContent = `${m.mode === 2 ? '雙打' : '單打'}・${DIFF_NAME[m.diff] || ''}・${m.target}分`;
     const sp = m.players[m.server];
-    $('srv').textContent = `${m.teamNames[m.servingTeam]}發球${m.mode === 2 ? '・第' + m.serverNum + '發球員' : ''}・${sp ? sp.name : ''}`;
+    const sw = m.servingTeam === lt && role !== 'spectator' ? '你方' : m.teamNames[m.servingTeam];
+    $('srv').textContent = m.mode === 2 ? `報分 ${PB.callText(m)}・${sw}發球 ${sp ? sp.name : ''}` : `${sw}發球・${sp ? sp.name : ''}`;
+    requestAnimationFrame(measureHud);
   }
   // rule tips
   const tip = $('tip'); let t = '', warn = false; const me = m.players[mySeat];
@@ -422,8 +472,8 @@ function press(shot) {
 // touch: joystick + buttons
 const joy = { id: null, ox: 0, oy: 0 };
 const jb = $('joyBase'), jk = $('joyKnob'), jz = $('joyZone');
-function joyPos(cx, cy) { const dx = cx - joy.ox, dy = cy - joy.oy, l = Math.hypot(dx, dy), max = 52, k = l > max ? max / l : 1; jk.style.transform = `translate(${dx * k}px,${dy * k}px)`; const n = Math.min(1, l / max); inp.jx = l > 6 ? (dx / l) * n : 0; inp.jy = l > 6 ? (-dy / l) * n : 0; }
-jz.addEventListener('pointerdown', (e) => { audio(); setTouch(true); joy.id = e.pointerId; const r = jz.getBoundingClientRect(); joy.ox = e.clientX; joy.oy = e.clientY; jb.style.left = e.clientX - r.left + 'px'; jb.style.top = e.clientY - r.top + 'px'; jb.classList.add('on'); joyPos(e.clientX, e.clientY); try { jz.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); });
+function joyPos(px, py) { const [cx, cy] = appXY(px, py); const dx = cx - joy.ox, dy = cy - joy.oy, l = Math.hypot(dx, dy), max = 52, k = l > max ? max / l : 1; jk.style.transform = `translate(${dx * k}px,${dy * k}px)`; const n = Math.min(1, l / max); inp.jx = l > 6 ? (dx / l) * n : 0; inp.jy = l > 6 ? (-dy / l) * n : 0; }
+jz.addEventListener('pointerdown', (e) => { audio(); setTouch(true); joy.id = e.pointerId; const r = appRect(jz), [ax, ay] = appXY(e.clientX, e.clientY); joy.ox = ax; joy.oy = ay; jb.style.left = ax - r.left + 'px'; jb.style.top = ay - r.top + 'px'; jb.classList.add('on'); joyPos(e.clientX, e.clientY); try { jz.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); });
 jz.addEventListener('pointermove', (e) => { if (e.pointerId === joy.id) joyPos(e.clientX, e.clientY); });
 const joyHome = () => { jb.style.left = jb.style.top = ''; jk.style.transform = ''; jb.classList.remove('on'); };
 const joyEnd = (e) => { if (e.pointerId !== joy.id) return; joy.id = null; inp.jx = inp.jy = 0; joyHome(); };
@@ -535,7 +585,7 @@ function seg(id, key, cb) {
 }
 const syncs = [];
 const syncAll = () => syncs.forEach((f) => f());
-syncs.push(seg('segDiff', 'diff', () => hostCfg()), seg('segTarget', 'target', () => hostCfg()), seg('segMode', 'mode', () => hostCfg()), seg('segChar', 'ch', () => drawPrev()), seg('segCol', 'co', () => drawPrev()));
+syncs.push(seg('segDiff', 'diff', () => hostCfg()), seg('segTarget', 'target', () => hostCfg()), seg('segMode', 'mode', () => hostCfg()), seg('segChar', 'ch', () => drawPrev()), seg('segCol', 'co', () => drawPrev()), seg('segOrient', 'orient', () => { try { localStorage.pbOrient = opt.orient; } catch (_) {} rzSoon(); }));
 document.querySelectorAll('#segCol button').forEach((b) => { b.style.setProperty('--c', COLS[+b.dataset.v]); });
 syncAll();
 try { $('nick').value = localStorage.pbNick || ''; } catch (_) {}
@@ -790,7 +840,7 @@ function frameBody(now) {
       for (const p of m.players) { if (p.ctrl === 'remote') { p.rp = p.rp ? { x: p.rp.x + (p.x - p.rp.x) * k, y: p.rp.y + (p.y - p.rp.y) * k } : { x: p.x, y: p.y }; } else p.rp = null; }
       const evs = m.events.splice(0); evs.forEach(handleEvent); if (role === 'host') { outbox.push(...evs); hostTick(dt); }
     } else clientTick(dt);
-    updHUD(); placeMsg(false);
+    updHUD(); placeMsg(false); placeTip(); dimOverBall();
   }
   try { render(dt); } catch (err) { layer = null; if (!frame.warned) { frame.warned = 1; console.warn('render recovered', err && err.message); } }
 }
@@ -798,5 +848,5 @@ resize();
 function loop(now) { frame(now); requestAnimationFrame(loop); }
 requestAnimationFrame(loop);
 // test hooks
-window.__pb = { looks: () => ({ room, prefs, rs: roomSeats() }), get m() { return m; }, proj, get view() { return { W, H, F, touchUI, port: PORT, pan: PAN, safe: safeRect(), ballR: lastBallR }; }, get state() { return state; }, get role() { return role; }, get room() { return roomCode; }, get roster() { return roster; }, get net() { return net; }, get fps() { return fps; }, get seat() { return mySeat; }, hitCount, startLocal, press };
+window.__pb = { looks: () => ({ room, prefs, rs: roomSeats() }), get m() { return m; }, proj, get view() { return { W, H, F, touchUI, port: PORT, pan: PAN, safe: safeRect(), ballR: lastBallR, tags: lastTags, hud: hudBlock, fpsY }; }, showMsg, get state() { return state; }, get role() { return role; }, get room() { return roomCode; }, get roster() { return roster; }, get net() { return net; }, get fps() { return fps; }, get seat() { return mySeat; }, get forced() { return FORCED; }, appRect, appXY, get orient() { return opt.orient; }, hitCount, startLocal, press };
 })();

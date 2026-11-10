@@ -32,7 +32,7 @@ function intercept(m, p, pred) { const q = PB.predict(m).find(pred); p.x = q.x; 
 { // serve into kitchen
   const m = human(1); serve(m, 'dink'); const b = m.ball;
   // re-aim the ball into the kitchen
-  const s = m.players[m.server]; const tx = PB.teamSign(1 - s.team) * 1.2, ty = -s.y * 0.8; const T = 1.4;
+  const s = m.players[m.server]; const tx = PB.teamSign(1 - s.team) * 1.2, ty = -s.y * 0.8; const T = 1.4 / (C.PACE || 1); // same arc at the v5 pace
   b.vx = (tx - b.x) / T; b.vy = (ty - b.y) / T; b.vz = (0 - b.z + 0.5 * C.G * T * T) / T;
   const evs = runUntil(m, (mm) => mm.phase !== 'rally'); ok(/廚房/.test(faultOf(evs)), 'serve landing in kitchen is a fault: ' + faultOf(evs));
   ok(m.servingTeam !== s.team, 'singles fault by server -> side out');

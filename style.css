@@ -175,3 +175,51 @@ body.port #brand{display:block;position:absolute;right:calc(10px + env(safe-area
 body.land #brand{display:block;position:absolute;left:50%;transform:translateX(-50%);top:calc(10px + env(safe-area-inset-top));font:900 13px/1 sans-serif;letter-spacing:1px;color:#f3ecff;text-shadow:0 0 8px #b48cff,0 0 2px #7a50ff;opacity:.85;pointer-events:none;white-space:nowrap}
 body.land #brand br{display:none}
 body.land #brand::after{content:''}
+
+/* ===== v5 ===== */
+/* own team first in the centre score, own score highlighted */
+#call{color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6)}#call .own{color:#ffe94a;text-shadow:0 0 10px rgba(255,233,74,.5)}#call i{font-style:normal;opacity:.6;margin:0 3px}
+#msgA .own{color:#ffe94a}
+/* prompts go see-through while the ball passes behind them */
+#tip.thru,#msg.thru{opacity:.16!important;transition:none}
+/* hints sit below my own baseline, above the controls: out of the ball's flight band */
+body.port #tip,body.port.touchui #tip{top:var(--tipy,var(--fk,30%))}
+/* brand top-right in every layout (desktop/landscape too) */
+body.land #brand{left:auto;transform:none;right:calc(10px + env(safe-area-inset-right));top:calc(52px + env(safe-area-inset-top));text-align:right;font:900 11px/1.15 sans-serif;letter-spacing:.5px;white-space:normal;opacity:.9}
+body.land #brand br{display:inline}
+/* landscape fault / call box: narrower, placed by JS between the scoreboard and the top-right buttons */
+body.land #msg{max-width:min(440px,60vw);padding:4px 14px 6px}
+body.land #msg #msgA{font-size:19px;white-space:normal;line-height:1.2}body.land #msg #msgB{font-size:13px;line-height:1.25}
+/* keyboard help wraps instead of running under the fps label */
+#keys{max-width:calc(100% - 120px);white-space:normal;text-align:center;line-height:1.3}
+/* 橫向 on an upright phone: rotate the whole page 90° (touch coordinates are remapped in main.js) */
+body.forced{position:fixed;left:0;top:var(--vvt,0px);width:var(--aw);height:var(--ah);margin:0;overflow:hidden;transform-origin:0 0;transform:translateX(var(--pw)) rotate(90deg)}
+body.forced canvas#cv,body.forced #touch{width:var(--aw);height:var(--ah)}
+body.forced .ov{width:var(--aw);height:var(--ah);max-height:var(--ah)}
+body.forced #keys{display:none}
+body.forced .card{padding:10px 14px}
+body.forced .big{padding:9px 12px;font-size:15px}
+body.forced h2{margin:6px 0 4px}
+body.forced #rcode{font-size:34px}
+body.forced .logo h1{font-size:26px}
+body.forced .tm .sc{font-size:22px}
+body.forced #call{font-size:19px}
+body.forced #msgA{font-size:24px}
+body.forced #msgB{font-size:15px}
+body.forced #lookPrev{width:44px;height:77px}
+body.forced .ov{padding:6px}
+body.forced .card{padding:8px 14px}
+body.forced .logo{margin-bottom:0;gap:8px}
+body.forced .logo h1{font-size:22px}
+body.forced .logo .en{margin-bottom:3px}
+body.forced .logo>div:first-child{transform:scale(.75)}
+body.forced .row{margin:4px 0}
+body.forced .row input{padding:6px 10px}
+body.forced h2{margin:3px 0 2px;font-size:13px}
+body.forced .big{padding:8px 12px;font-size:15px}
+body.forced .row.foot{min-height:20px}
+body.forced #lookPrev{width:40px;height:70px}
+body.forced .seg button{padding:4px 9px}
+body.forced .tm .sc{font-size:15px}
+body.forced #call{font-size:17px}
+body.port #tip,body.port.touchui #tip{width:max-content;max-width:calc(100vw - 24px)}

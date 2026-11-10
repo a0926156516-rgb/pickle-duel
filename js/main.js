@@ -49,16 +49,29 @@ let lastFrame = performance.now(), fps = 60, fpsAcc = 0, fpsN = 0;
 // ---------- canvas & projection ----------
 const cv = $('cv'), ctx = cv.getContext('2d');
 let W = 0, H = 0, DPR = 1, F = 1, CX = 0, CY = 0, layer = null, layerR = 0, layerKey = '';
-// landscape broadcast camera: court laid out horizontally (teams left/right, net vertical in the middle), pitched view from the near sideline.
-const TH = 1.08, CD = 17, KZ = 0.8, CT = Math.cos(TH), SN = Math.sin(TH);
+// Two cameras, picked by the screen shape:
+//  PORT (phone upright, the primary layout): court laid out vertically, net horizontal across the middle, own team at the bottom,
+//        camera behind the own baseline.  view u (screen right) = -R*y, view v (depth) = R*x  (a proper rotation, so each
+//        player's right service court is on their right as they face the net).
+//  landscape: court horizontal (teams left/right, net vertical), pitched view from the near sideline: u = R*x, v = R*y.
+let PORT = true, TH = 1.08, CD = 17, CT = Math.cos(TH), SN = Math.sin(TH); const KZ = 0.8;
+function setCam(port) { PORT = port; TH = port ? (H < 780 ? 0.86 : 0.94) : 1.08; CD = port ? 30 : 17; CT = Math.cos(TH); SN = Math.sin(TH); }
 function g2(X, Y) { const dy = Y + CD * CT, dz = -CD * SN; const depth = dy * CT - dz * SN, up = dy * SN + dz * CT; return [X / depth, up / depth, 1 / depth]; }
-function proj(x, y, z) { const g = g2(R * x, R * y), s = F * g[2]; return [CX + F * g[0], CY - F * g[1] - (z || 0) * s * KZ, s]; }
-let rotDismissed = false, touchUI = false;
+// view-frame projection (u across the screen, v into the screen); used for the arena backdrop
+function pv(u, v, z) { const g = g2(u, v), s = F * g[2]; return [CX + F * g[0], CY - F * g[1] - (z || 0) * s * KZ, s]; }
+const toView = (x, y) => (PORT ? [-R * y, R * x] : [R * x, R * y]);
+function proj(x, y, z) { const v = toView(x, y); return pv(v[0], v[1], z); }
+const depthOf = (x, y) => (PORT ? R * x : R * y);
+let touchUI = false;
 function safeRect() {
   const land = W >= H, tu = touchUI && state === 'play';
-  const left = tu ? (land ? Math.min(118, W * 0.15) : 8) : 8, right = tu ? (land ? Math.min(118, W * 0.15) : 8) : 8;
-  const top = H < 430 ? 46 : 62, bottom = tu && !land ? 190 : 6;
-  return { l: left, r: W - right, t: top, b: H - bottom };
+  if (PORT) { // controls live below the court
+    const top = H < 700 ? 60 : 68, bottom = tu ? (H < 780 ? 170 : 212) : 8;
+    return { l: 6, r: W - 6, t: top, b: H - bottom };
+  }
+  const left = tu ? Math.min(118, W * 0.15) : 8, right = tu ? Math.min(118, W * 0.15) : 8;
+  const top = H < 430 ? 46 : 62; void land;
+  return { l: left, r: W - right, t: top, b: H - 6 };
 }
 function resize() {
   DPR = Math.min(3, window.devicePixelRatio || 1);
@@ -68,38 +81,31 @@ function resize() {
   cv.width = Math.max(1, Math.round(W * DPR)); cv.height = Math.max(1, Math.round(H * DPR));
   cv.style.width = W + 'px'; cv.style.height = H + 'px';
   document.documentElement.style.setProperty('--vh', H + 'px');
+  setCam(H >= W * 0.9);
+  document.body.classList.toggle('pshort', H >= W * 0.9 && H < 780);
   // fit the court (and players standing on it) into the area not covered by HUD / touch controls
   const S = safeRect(); let minx = 1e9, maxx = -1e9, miny = 1e9, maxy = -1e9;
   const pts = [];
-  for (const X of [-C.HL - 0.4, C.HL + 0.4]) for (const Y of [-C.HW - 0.5, C.HW + 0.3]) pts.push([X, Y, 0]);
-  for (const X of [-C.HL, C.HL]) pts.push([X, C.HW + 0.4, 2.1]);
+  if (PORT) { for (const U of [-C.HW - 0.35, C.HW + 0.35]) for (const V of [-C.HL - 0.45, C.HL + 0.25]) pts.push([U, V, 0]); for (const U of [-C.HW, C.HW]) pts.push([U, C.HL, 2.0]); pts.push([0, -C.HL - 0.3, 1.9]); }
+  else { for (const X of [-C.HL - 0.4, C.HL + 0.4]) for (const Y of [-C.HW - 0.5, C.HW + 0.3]) pts.push([X, Y, 0]); for (const X of [-C.HL, C.HL]) pts.push([X, C.HW + 0.4, 2.1]); }
   for (const [X, Y, z] of pts) { const g = g2(X, Y); const sx = g[0], sy = g[1] + z * g[2] * KZ; minx = Math.min(minx, sx); maxx = Math.max(maxx, sx); miny = Math.min(miny, sy); maxy = Math.max(maxy, sy); }
   const aw = Math.max(40, S.r - S.l), ah = Math.max(40, S.b - S.t);
   F = Math.min(aw / (maxx - minx), ah / (maxy - miny)); if (!(F > 1)) F = Math.max(1, F || 1);
   CX = (S.l + S.r) / 2 - F * (minx + maxx) / 2;
   CY = (S.t + S.b) / 2 + F * (miny + maxy) / 2;
   layer = null;
-  const portrait = H > W * 1.05 && (touchUI || matchMedia('(pointer:coarse)').matches);
-  $('rot').classList.toggle('hide', !portrait || rotDismissed);
   document.body.classList.toggle('land', W >= H); document.body.classList.toggle('port', W < H);
 }
 let rzT = 0; const rzSoon = () => { resize(); clearTimeout(rzT); rzT = setTimeout(resize, 250); };
 addEventListener('resize', rzSoon); addEventListener('orientationchange', rzSoon);
 if (window.visualViewport) visualViewport.addEventListener('resize', rzSoon);
-$('bRotOk').onclick = () => { rotDismissed = true; resize(); };
-// try to lock landscape after the first tap (works on Android Chrome, needs fullscreen there; iOS ignores)
-let lockTried = false;
-function tryLock() {
-  if (lockTried) return; lockTried = true;
-  const so = screen.orientation; if (!so || !so.lock) return;
-  so.lock('landscape').catch(() => { const de = document.documentElement; if (!document.fullscreenElement && de.requestFullscreen && matchMedia('(pointer:coarse)').matches) de.requestFullscreen({ navigationUI: 'hide' }).then(() => so.lock('landscape')).catch(() => {}); });
-}
-addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') { tryLock(); setTouch(true); } }, true);
+addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') setTouch(true); }, true);
 addEventListener('touchstart', () => setTouch(true), { capture: true, passive: true });
 addEventListener('mousemove', (e) => { if (e.movementX || e.movementY) { if (performance.now() - lastTouchAt > 800) setTouch(false); } }, true);
 let lastTouchAt = 0;
 function setTouch(on) { if (on) lastTouchAt = performance.now(); if (touchUI === on) return; touchUI = on; document.body.classList.toggle('touchui', on); resize(); }
 
+function quadV(c, pts, fill) { c.beginPath(); pts.forEach((p, i) => { const q = pv(p[0], p[1], p[2] || 0); i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]); }); c.closePath(); c.fillStyle = fill; c.fill(); }
 function quad(c, pts, fill) { c.beginPath(); pts.forEach((p, i) => { const q = proj(p[0], p[1], p[2] || 0); i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]); }); c.closePath(); c.fillStyle = fill; c.fill(); }
 function lineQ(c, x1, y1, x2, y2, w, col) { // ground line as quad
   const dx = x2 - x1, dy = y2 - y1, l = Math.hypot(dx, dy), nx = -dy / l * w / 2, ny = dx / l * w / 2;
@@ -113,27 +119,27 @@ function buildLayer() {
   c.fillStyle = g; c.fillRect(0, 0, W, H);
   for (let i = 0; i < 6; i++) { const x = W * (i + 0.5) / 6, rg = c.createRadialGradient(x, 8, 0, x, 8, W * 0.18); rg.addColorStop(0, 'rgba(255,250,220,.35)'); rg.addColorStop(1, 'rgba(255,250,220,0)'); c.fillStyle = rg; c.fillRect(0, 0, W, H * 0.5); }
   // back wall + crowd
-  const wy = 7.2;
-  quad(c, [[-40, wy, 0], [40, wy, 0], [40, wy, 4.2], [-40, wy, 4.2]].map((p) => [R * p[0], R * p[1], p[2]]), '#16234a');
+  const wy = PORT ? C.HL + 3.2 : 7.2, ny = PORT ? -C.HL - 30 : -14, RW = PORT ? [-6.4, 6.4, -C.HL - 2.6, C.HL + 2.3] : [-9.6, 9.6, -5.6, 5.3];
+  quadV(c, [[-40, wy, 0], [40, wy, 0], [40, wy, 4.2], [-40, wy, 4.2]], '#16234a');
   const rnd = (() => { let a = 7; return () => ((a = (a * 16807) % 2147483647) / 2147483647); })();
   const crowd = ['#ffd166', '#ef476f', '#06d6a0', '#118ab2', '#f8f9fa', '#ff9f1c', '#c77dff'];
   for (let row = 0; row < 5; row++) for (let k = -38; k < 38; k += 0.55) {
-    const z = 1.5 + row * 0.55, q = proj(R * (k + rnd() * 0.3), R * wy, z), s = q[2];
+    const z = 1.5 + row * 0.55, q = pv(k + rnd() * 0.3, wy, z), s = q[2];
     c.fillStyle = crowd[(rnd() * crowd.length) | 0]; c.globalAlpha = 0.55 + rnd() * 0.3;
     c.beginPath(); c.arc(q[0], q[1], Math.max(0, s * 0.17), 0, 7); c.fill();
     c.fillRect(q[0] - s * 0.17, q[1] + s * 0.12, Math.max(0, s * 0.34), Math.max(0, s * 0.3));
   }
   c.globalAlpha = 1;
   // ad board
-  quad(c, [[-40, wy - 0.05, 0], [40, wy - 0.05, 0], [40, wy - 0.05, 1.0], [-40, wy - 0.05, 1.0]].map((p) => [R * p[0], R * p[1], p[2]]), '#0e7c5a');
+  quadV(c, [[-40, wy - 0.05, 0], [40, wy - 0.05, 0], [40, wy - 0.05, 1.0], [-40, wy - 0.05, 1.0]], '#0e7c5a');
   c.fillStyle = 'rgba(255,255,255,.9)'; c.textAlign = 'center';
-  for (const k of [-9, 0, 9]) { const q = proj(R * k, R * wy, 0.32); c.font = `900 ${Math.max(9, q[2] * 0.55)}px sans-serif`; c.fillText('PICKLE DUEL  匹克球對決', q[0], q[1]); }
+  for (const k of (PORT ? [-7, 0, 7] : [-9, 0, 9])) { const q = pv(k, wy, 0.32); c.font = `900 ${Math.max(9, q[2] * 0.55)}px sans-serif`; c.fillText('PICKLE DUEL  匹克球對決', q[0], q[1]); }
   // floor
-  quad(c, [[-40, -14], [40, -14], [40, wy], [-40, wy]].map((p) => [R * p[0], R * p[1]]), '#2a8a5e');
-  const fg = c.createLinearGradient(0, proj(0, R * wy, 0)[1], 0, H); fg.addColorStop(0, 'rgba(0,0,0,.25)'); fg.addColorStop(1, 'rgba(0,0,0,0)');
-  c.fillStyle = fg; c.fillRect(0, proj(0, R * wy, 0)[1], W, H);
+  quadV(c, [[-40, ny], [40, ny], [40, wy], [-40, wy]], '#2a8a5e');
+  const fy = pv(0, wy, 0)[1], fg = c.createLinearGradient(0, fy, 0, H); fg.addColorStop(0, 'rgba(0,0,0,.25)'); fg.addColorStop(1, 'rgba(0,0,0,0)');
+  c.fillStyle = fg; c.fillRect(0, fy, W, H);
   // run-off and court
-  quad(c, [[-9.6, -5.6], [9.6, -5.6], [9.6, 5.3], [-9.6, 5.3]], '#2f7d4f');
+  quadV(c, [[RW[0], RW[2]], [RW[1], RW[2]], [RW[1], RW[3]], [RW[0], RW[3]]], '#2f7d4f');
   quad(c, [[-C.HL, -C.HW], [C.HL, -C.HW], [C.HL, C.HW], [-C.HL, C.HW]], '#2563b6');
   quad(c, [[-C.K, -C.HW], [C.K, -C.HW], [C.K, C.HW], [-C.K, C.HW]], '#3d86d8');
   c.font = `800 ${F * 0.03}px sans-serif`;
@@ -148,17 +154,17 @@ function buildLayer() {
     c.save(); c.globalAlpha = 0.28; c.fillStyle = '#fff'; c.font = `900 ${q[2] * 0.42}px sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('廚房', q[0], q[1]); c.restore();
   }
   for (const sy of [-1, 1]) lineQ(c, -C.HL, sy * (C.HW - lw / 2), C.HL, sy * (C.HW - lw / 2), lw, white);
-  layer = L; layerR = R;
+  layer = L; layerR = R; layerKey = (PORT ? 'P' : 'L') + W + 'x' + H;
 }
 
 // ---------- drawing ----------
 const fx = []; // effects
 const trail = [];
 function drawNet(c) {
-  const N = 24, top = [], bot = [], sk = 0.22; // sk: draw the net's height slightly to the right so it reads as a band, not an edge-on line
+  const N = 24, top = [], bot = [], sk = PORT ? 0 : 0.22; // sk: draw the net's height slightly to the right so it reads as a band, not an edge-on line
   for (let i = 0; i <= N; i++) { const y = -C.NET_HALF + (2 * C.NET_HALF * i) / N, h = PB.netH(Math.min(Math.abs(y), C.HW) * Math.sign(y)); const g = proj(0, y, 0), t = proj(0, y, h); bot.push(g); top.push([t[0] + h * g[2] * sk, t[1], g[2]]); }
   // shadow on the floor
-  c.fillStyle = 'rgba(0,0,0,.18)'; c.beginPath(); bot.forEach((q, i) => (i ? c.lineTo(q[0] + q[2] * 0.35, q[1]) : c.moveTo(q[0] + q[2] * 0.35, q[1]))); for (let i = N; i >= 0; i--) c.lineTo(bot[i][0], bot[i][1]); c.closePath(); c.fill();
+  const shx = PORT ? 0 : 0.35, shy = PORT ? 0.22 : 0; c.fillStyle = 'rgba(0,0,0,.18)'; c.beginPath(); bot.forEach((q, i) => (i ? c.lineTo(q[0] + q[2] * shx, q[1] + q[2] * shy) : c.moveTo(q[0] + q[2] * shx, q[1] + q[2] * shy))); for (let i = N; i >= 0; i--) c.lineTo(bot[i][0], bot[i][1]); c.closePath(); c.fill();
   c.beginPath(); top.forEach((q, i) => (i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]))); for (let i = N; i >= 0; i--) c.lineTo(bot[i][0], bot[i][1]); c.closePath();
   c.fillStyle = 'rgba(15,20,30,.42)'; c.fill();
   c.strokeStyle = 'rgba(230,235,245,.35)'; c.lineWidth = 1; c.beginPath();
@@ -171,7 +177,7 @@ function drawNet(c) {
 function rr(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
 function drawPlayer(c, p, me) {
   const pos = p.rp || p; const q = proj(pos.x, pos.y, 0), s = q[2], x = q[0], y = q[1];
-  const co = p.co != null ? p.co : p.i % 4, col = COLS[co], face = proj(0, pos.y, 0)[0] >= x ? 1 : -1; // always face the net
+  const co = p.co != null ? p.co : p.i % 4, col = COLS[co], face = PORT ? ((m ? proj(m.ball.x, m.ball.y, 0)[0] : W / 2) >= x ? 1 : -1) : (proj(0, pos.y, 0)[0] >= x ? 1 : -1); // face the net (landscape) / the ball (portrait)
   const spd = Math.hypot(p.vx || 0, p.vy || 0); const now = performance.now() / 1000;
   p.walk = (p.walk || 0) + spd * 0.045;
   // shadow + "me" ring
@@ -228,7 +234,7 @@ function drawShadow(c, b) {
 }
 function render(dt) {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  if (!layer || layerR !== R) buildLayer();
+  if (!layer || layerR !== R || layerKey !== (PORT ? 'P' : 'L') + W + 'x' + H) buildLayer();
   ctx.drawImage(layer, 0, 0, W, H);
   if (!m) { // menu backdrop: idle ball
     const t = performance.now() / 1000; const b = { x: Math.sin(t * 0.9) * 5, y: Math.cos(t * 0.5) * 2, z: 0.3 + Math.abs(Math.sin(t * 2.6)) * 2 };
@@ -254,7 +260,7 @@ function render(dt) {
   drawShadow(ctx, bv);
   const objs = m.players.map((p) => ({ k: 'p', p, x: (p.rp || p).x, y: (p.rp || p).y }));
   objs.push({ k: 'b', x: bv.x, y: bv.y });
-  objs.sort((a, c) => R * c.y - R * a.y);
+  objs.sort((a, c) => depthOf(c.x, c.y) - depthOf(a.x, a.y));
   const draw = (o) => (o.k === 'p' ? drawPlayer(ctx, o.p, o.p.i === mySeat && role !== 'spectator') : drawBall(ctx, bv));
   const farBall = objs.find((o) => o.k === 'b');
   // the net is drawn under everything except objects on the far side of it that are low enough to be hidden by it
@@ -321,7 +327,7 @@ let hudSig = '';
 function updHUD() {
   if (!m) return;
   const lt = R === 1 ? 0 : 1, rt = 1 - lt;
-  const names = (t) => m.players.filter((p) => p.team === t).map((p) => (p.i === mySeat && role !== 'spectator' ? '★' : '') + p.name).join('<br>');
+  const names = (t) => m.players.filter((p) => p.team === t).map((p) => (p.i === mySeat && role !== 'spectator' ? '★' : '') + esc(p.name)).join('<br>');
   const sig = [m.score.join(), m.servingTeam, m.serverNum, m.server, lt, m.players.map((p) => p.name + p.co).join()].join('|');
   if (sig !== hudSig) {
     hudSig = sig;
@@ -385,7 +391,7 @@ function readMove() {
   if (keys.KeyA || keys.ArrowLeft) x -= 1; if (keys.KeyD || keys.ArrowRight) x += 1;
   if (keys.KeyW || keys.ArrowUp) y += 1; if (keys.KeyS || keys.ArrowDown) y -= 1;
   const l = Math.hypot(x, y); if (l > 1) { x /= l; y /= l; }
-  return { mx: R * x, my: R * y }; // screen -> world (view may be rotated 180°)
+  return PORT ? { mx: R * y, my: -R * x } : { mx: R * x, my: R * y }; // screen -> world (inverse of toView)
 }
 // autopilot (testing / demo): steer toward the predicted hitting spot
 let apPred = null, apKey = '', apServeT = 0, apLazy = false;
@@ -420,7 +426,7 @@ function localInput(p) {
 function seatsLocal(mode) {
   const n = mode * 2, s = [];
   for (let i = 0; i < n; i++) s.push(i === 0 ? { name: myName(), ctrl: 'local', ...myLook() } : { name: '', ctrl: 'ai' });
-  const L = assignLooks(s); s.forEach((q, i) => { q.ch = L[i].ch; q.co = L[i].co; if (i) q.name = CHARS[q.ch].n + (i % 2 === 0 ? '（隊友）' : mode === 1 ? '' : i === 1 ? '甲' : '乙'); });
+  const L = assignLooks(s); s.forEach((q, i) => { q.ch = L[i].ch; q.co = L[i].co; if (i) q.name = (i % 2 === 0 ? '隊友' : '') + CHARS[q.ch].n + (i % 2 === 0 ? '' : mode === 1 ? '' : i === 1 ? '甲' : '乙'); });
   return s;
 }
 function myName() { const v = $('nick').value.trim(); return (v || autoNick).slice(0, 8); }
@@ -705,5 +711,5 @@ resize();
 function loop(now) { frame(now); requestAnimationFrame(loop); }
 requestAnimationFrame(loop);
 // test hooks
-window.__pb = { looks: () => ({ room, prefs, rs: roomSeats() }), get m() { return m; }, proj, get view() { return { W, H, F, touchUI, safe: safeRect() }; }, get state() { return state; }, get role() { return role; }, get room() { return roomCode; }, get roster() { return roster; }, get net() { return net; }, get fps() { return fps; }, get seat() { return mySeat; }, hitCount, startLocal, press };
+window.__pb = { looks: () => ({ room, prefs, rs: roomSeats() }), get m() { return m; }, proj, get view() { return { W, H, F, touchUI, port: PORT, safe: safeRect() }; }, get state() { return state; }, get role() { return role; }, get room() { return roomCode; }, get roster() { return roster; }, get net() { return net; }, get fps() { return fps; }, get seat() { return mySeat; }, hitCount, startLocal, press };
 })();

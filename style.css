@@ -113,3 +113,21 @@ body.land.touchui #tip{top:auto;bottom:calc(8px + env(safe-area-inset-bottom))}
 #msg{top:46%;background:rgba(8,16,34,.78);padding:6px 18px 8px;border-radius:16px;box-shadow:0 6px 20px rgba(0,0,0,.35)}
 #msgA{font-size:clamp(20px,4.2vw,40px)}
 @media (max-height:430px){#msgA{font-size:24px}#msgB{font-size:15px}#lookPrev{width:44px;height:77px}}
+/* portrait (primary layout): full-width score bar, names never truncated to "…" */
+body.port #board{width:calc(100vw - 104px);max-width:none}
+body.port .tm{flex:1 1 0;padding:4px 6px;gap:4px}
+body.port #tmR{justify-content:flex-end}
+body.port .tm .nm{max-width:none;flex:1 1 auto;font-size:10.5px;line-height:1.25;white-space:nowrap;text-overflow:clip;letter-spacing:-.3px}
+body.port .tm .sc{font-size:24px;min-width:22px}
+body.port .mid{min-width:0;flex:0 1 auto;padding:3px 6px}
+body.port #call{font-size:20px}
+body.port #srv{white-space:normal;font-size:10px;line-height:1.25;max-width:96px}
+body.port.touchui #tip{top:auto;bottom:calc(218px + env(safe-area-inset-bottom))}
+/* shorter portrait phones (SE, in-app webviews with toolbars): compact controls so the court can be larger */
+body.pshort #btns{width:184px;height:158px}
+body.pshort #tbDrive{width:84px;height:84px;font-size:17px}
+body.pshort #tbDink{right:90px;bottom:2px;width:66px;height:66px}
+body.pshort #tbLob{right:10px;bottom:90px;width:66px;height:66px}
+body.pshort #joyBase{width:104px;height:104px;margin:-52px 0 0 -52px;left:84px;top:calc(100% - 84px)}
+body.port .tm .nm{font-size:10px}
+@media (max-width:370px){body.port #srv{max-width:78px;font-size:9.5px}body.port .tm .sc{font-size:20px;min-width:18px}body.port #board{width:calc(100vw - 96px)}body.port .mid{padding:3px 4px}}

@@ -1,4 +1,4 @@
-// Real-phone landscape checks: hasTouch/isMobile/high DPR, several iPhone/Android sizes, rotation before and during a match, address-bar height changes.
+// Landscape is still supported (secondary since v3a, portrait is primary). Real-phone landscape checks: hasTouch/isMobile/high DPR, several iPhone/Android sizes, rotation before and during a match, address-bar height changes.
 const { chromium } = require('playwright');
 const BASE = process.env.BASE || 'http://localhost:8077/index.html';
 const OUT = process.env.OUT || '/workspace/pickleball-shots/v2/';
@@ -21,7 +21,7 @@ const geom = (p) => p.evaluate(() => {
   const inPoly = (x, y) => { let c = false; for (let i = 0, j = 3; i < 4; j = i++) { const a = cs[i], b = cs[j]; if ((a[1] > y) !== (b[1] > y) && x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]) c = !c; } return c; };
   let overlap = 0; for (const r of rects) for (let i = 0; i <= 6; i++) for (let k = 0; k <= 6; k++) { const x = r.left + r.width * i / 6, y = r.top + r.height * k / 6; const dx = x - (r.left + r.width / 2), dy = y - (r.top + r.height / 2); if (dx * dx / (r.width * r.width / 4) + dy * dy / (r.height * r.height / 4) <= 1 && inPoly(x, y)) overlap++; }
   const jb = document.getElementById('joyBase').getBoundingClientRect();
-  return { W: v.W, H: v.H, F: +v.F.toFixed(1), touch: v.touchUI, courtW: Math.round(court.r - court.l), courtH: Math.round(court.b - court.t), court, overlap, btns: rects.length, cv: [document.getElementById('cv').width, document.getElementById('cv').height], cssH: document.getElementById('cv').getBoundingClientRect().height, joy: [Math.round(jb.left), Math.round(jb.top)], rot: !document.getElementById('rot').classList.contains('hide'), state: __pb.state };
+  return { W: v.W, H: v.H, F: +v.F.toFixed(1), touch: v.touchUI, courtW: Math.round(court.r - court.l), courtH: Math.round(court.b - court.t), court, overlap, btns: rects.length, cv: [document.getElementById('cv').width, document.getElementById('cv').height], cssH: document.getElementById('cv').getBoundingClientRect().height, joy: [Math.round(jb.left), Math.round(jb.top)], rot: !!document.getElementById('rot'), port: __pb.view.port, state: __pb.state };
 });
 const alive = async (p) => { const a = await p.evaluate(() => __pb.m ? __pb.m.t : performance.now() / 1000); await p.waitForTimeout(400); const b = await p.evaluate(() => __pb.m ? __pb.m.t : performance.now() / 1000); return b > a; };
 (async () => {
@@ -32,11 +32,10 @@ const alive = async (p) => { const a = await p.evaluate(() => __pb.m ? __pb.m.t 
     const ctx = await browser.newContext({ viewport: { width: d.h, height: d.w }, deviceScaleFactor: d.dpr, isMobile: true, hasTouch: true, userAgent: d.ua });
     const p = await ctx.newPage(); p.on('pageerror', (e) => errs.push('pageerror ' + e.message)); p.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') errs.push(m.type() + ' ' + m.text()); });
     await p.goto(BASE + '?fps=1'); await p.waitForTimeout(500);
-    let g = await geom(p); ok(g.rot, `[${d.tag}] portrait shows rotate prompt`);
-    if (d.shots) await p.screenshot({ path: OUT + `portrait_rotate_prompt_${d.tag}.png` });
+    let g = await geom(p); ok(!g.rot && g.port, `[${d.tag}] portrait: no rotate blocker, portrait layout`);
     // rotate to landscape (before match)
     await p.setViewportSize({ width: d.w, height: d.h }); await p.waitForTimeout(400);
-    g = await geom(p); ok(!g.rot && g.W === d.w && g.H === d.h, `[${d.tag}] rotated to landscape: prompt hidden, canvas ${g.W}x${g.H} (backing ${g.cv})`);
+    g = await geom(p); ok(!g.rot && !g.port && g.W === d.w && g.H === d.h, `[${d.tag}] rotated to landscape: landscape layout, canvas ${g.W}x${g.H} (backing ${g.cv})`);
     if (d.shots) await p.screenshot({ path: OUT + `menu_${d.tag}.png` });
     await p.fill('#nick', '峻慶'); await p.tap('#bS2'); await p.waitForTimeout(1500);
     g = await geom(p);

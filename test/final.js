@@ -11,7 +11,7 @@ const LOCAL = 'http://localhost:8077/index.html';
   console.log('autopilot(human settings) vs normal AI, 60s:', JSON.stringify(await a.evaluate(() => ({ score: __pb.m.score, faults: __pb.m.stats.faults, fps: Math.round(__pb.fps) }))), 'fault screenshot:', shot);
   // 2) portrait hint
   const pt = await mk({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }, 'portrait'); await pt.goto(LOCAL); await pt.waitForTimeout(400); await pt.screenshot({ path: OUT + 'portrait_hint.png' });
-  console.log('portrait hint visible:', await pt.evaluate(() => !document.getElementById('rot').classList.contains('hide')));
+  console.log('portrait layout (no blocker):', await pt.evaluate(() => __pb.view.port && !document.getElementById('rot')));
   // 3) seat change: 2 humans as teammates vs 2 AI
   const S = '&server=' + encodeURIComponent('ws://localhost:10077/ws');
   const h = await mk(null, 'seatH'), c = await mk(null, 'seatC');

@@ -427,9 +427,10 @@ function autopilot(p) {
   if (mate0) ty = (p.y < mate0.y || (p.y === mate0.y && p.i < mate0.i) ? -1.45 : 1.45) + Math.max(-0.8, Math.min(0.8, b.y * 0.3));
   if (m.phase === 'serve') { const f = PB.formation(m)[p.i]; tx = f.x; ty = f.y; if (m.server === p.i && m.phaseT > 1.1 && apServeT !== m.point) { apServeT = m.point; press('drive'); } }
   else if (m.live && m.lastHitTeam !== p.team) {
-    const key = m.rally + ':' + m.bounces; if (key !== apKey || !apPred) { if (!apKey.startsWith(m.rally + ':')) apLazy = Math.random() < 0.12; apKey = key; apPred = PB.predict(m); }
+    const key = m.rally + ':' + m.bounces; if (key !== apKey || !apPred) { if (!apKey.startsWith(m.rally + ':')) apLazy = Math.random() < 0.05; apKey = key; apPred = PB.predict(m); }
     if (apLazy) return { mx: 0, my: 0 }; // autopilot occasionally misses so points get decided
     let mate = m.players.find((q) => q.team === p.team && q !== p);
+    const fb = apPred.firstBounce; if (fb && (fb.x < 0 ? 0 : 1) === p.team) { tx = fb.x + xs * 0.6; ty = fb.y; } // at least chase the landing spot
     for (const q of apPred) {
       if ((q.x < 0 ? 0 : 1) !== p.team || q.b >= 2) continue;
       if (!(q.b >= 1 ? q.z > 0.15 && q.z < 1.3 : m.hits >= 3 && Math.abs(q.x) > C.K + 0.4 && q.z > 0.3 && q.z < 1.6)) continue;
@@ -437,6 +438,7 @@ function autopilot(p) {
       tx = q.x + xs * 0.2; ty = q.y; if (Math.hypot(q.x - p.x, q.y - p.y) / C.SPEED <= q.t) break;
     }
   }
+  if (m.phase !== 'serve') { const ax = Math.abs(tx); tx = xs * Math.max(0.4, Math.min(C.HL + 1.0, xs * tx > 0 ? ax : 0.4)); ty = Math.max(-C.HW - 0.4, Math.min(C.HW + 0.4, ty)); } // stay on our half, near the court
   const dx = tx - p.x, dy = ty - p.y, d = Math.hypot(dx, dy);
   if (m.phase === 'rally' && m.bounces === 0 && Math.abs(p.x) < C.K + 0.2 && m.lastHitTeam !== p.team) return { mx: xs, my: 0 };
   return d < 0.08 ? { mx: 0, my: 0 } : { mx: dx / d * Math.min(1, d / 0.5), my: dy / d * Math.min(1, d / 0.5) };

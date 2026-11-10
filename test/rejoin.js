@@ -29,12 +29,13 @@ let fails = 0; const ok = (c, t) => { console.log((c ? 'PASS ' : 'FAIL ') + t); 
     const hv = await S(h); ok(hv.P[seat].includes('|ai'), `[${name}] after reload host gives seat ${seat} to the CPU, look kept (${hv.P[seat]})`);
     // a few points pass with the CPU in the seat
     await h.waitForTimeout(2500);
+    const nm2 = seat === 2 ? '玩家999' : name; if (seat === 2) await tab.fill('#nick', nm2); // case 1: like the tester, the reloaded tab comes back with a different (auto) nickname -> only the stored device id matches
     await tab.fill('#code', code); await tab.tap('#bJoin');
     await tab.waitForFunction(() => window.__pb.state === 'play' && window.__pb.m, null, { timeout: 30000 });
     const t0 = Date.now(); const [a, c] = await Promise.all([S(h), S(tab)]); const fresh = Date.now() - t0;
     console.log(`[${name}] host  :`, JSON.stringify({ ...a, P: undefined })); console.log(`[${name}] client:`, JSON.stringify({ ...c, P: undefined }));
     ok(c.seat === seat, `[${name}] rejoined into original seat ${seat} (got ${c.seat})`);
-    ok(a.P[seat].startsWith(name + '|') && a.P[seat].endsWith('|remote'), `[${name}] host shows seat ${seat} = ${a.P[seat]}`);
+    ok(a.P[seat].startsWith(nm2 + '|') && a.P[seat].endsWith('|remote'), `[${name}] host shows seat ${seat} = ${a.P[seat]}`);
     ok(a.P[seat].split('|')[1] === look0.split('|')[1], `[${name}] kept character/colour ${look0.split('|')[1]}`);
     ok(JSON.stringify(a.P.map((s) => s.split('|').slice(0, 2))) === JSON.stringify(c.P.map((s) => s.split('|').slice(0, 2))), `[${name}] rejoiner sees same names/looks as host`);
     ok(a.pt === c.pt && a.sc === c.sc && a.st === c.st && a.sn === c.sn && a.sv === c.sv && a.tn === c.tn, `[${name}] immediate state match: score ${c.sc} serve ${c.st}/${c.sn} server ${c.sv} point ${c.pt} (sampled ${fresh}ms apart)`);

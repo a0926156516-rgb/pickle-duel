@@ -22,4 +22,4 @@
 - 電腦：WASD／方向鍵移動，J／空白 抽球、K 吊小球、L 高吊，Esc 選單。
 
 ## 測試（`test/`）
-`npm i` 後：`node sim.js`（電腦對電腦整場模擬、計分不變量）、`node rules.js`（規則情境單元測試）、`node local.js` / `node net.js` / `node final.js`（Playwright 截圖、2 人與 4 人線上房間）、`node port.js`（直向：6 種手機尺寸、CDP 真實觸控、工具列伸縮、橫直旋轉、線上雙方都看到自己在下方）、`node land.js`（5 種手機橫向模擬：觸控、DPR 3、直→橫旋轉、比賽中旋轉、網址列伸縮）、`node looks.js`（線上角色／顏色同步）、`node fault.js`（觸控發球失誤顯示原因）、`node swing.js`（揮拍截圖）。需先啟動 `python3 -m http.server 8077`（專案根目錄）與 `PORT=10077 node server/relay.js`。
+`npm i` 後：`node sim.js`（電腦對電腦整場模擬、計分不變量）、`node rules.js`（規則情境單元測試）、`node local.js` / `node net.js` / `node final.js`（Playwright 截圖、2 人與 4 人線上房間）、`node port.js`（直向：6 種手機尺寸、CDP 真實觸控、工具列伸縮、橫直旋轉、線上雙方都看到自己在下方）、`node land.js`（5 種手機橫向模擬：觸控、DPR 3、直→橫旋轉、比賽中旋轉、網址列伸縮）、`node looks.js`（線上角色／顏色同步）、`node fault.js`（觸控發球失誤顯示原因）、`node swing.js`（揮拍截圖）、`node rejoin.js`（中途重新整理後回到原座位、狀態立即一致）、`node faults.js`（廚房犯規與各種發球失誤文字實際顯示）。需先啟動 `python3 -m http.server 8077`（專案根目錄）與 `PORT=10077 node server/relay.js`。

@@ -14,7 +14,7 @@
 <canvas id="cv"></canvas>
 
 <!-- HUD -->
-<div id="hud" class="hide">
+<div id="hud" class="hide"><div id="brand">匹克球對決 <br>PICKLE DUEL</div>
   <button id="bPause" class="icon" aria-label="選單">☰</button>
   <div id="board">
     <div id="hdr">雙打・普通</div>
@@ -78,6 +78,7 @@
       <span>模式</span><div class="seg" id="segMode"><button data-v="1">單打 1v1</button><button data-v="2" class="sel">雙打 2v2</button></div>
     </div>
     <div id="seats"></div>
+    <div class="row small lookNote">👕 衣服、球拍＝各自選的角色與顏色（撞色時自動換一個）；腳下光圈與名牌＝隊伍顏色（隊伍顏色取自該隊第一位）</div>
     <div class="row small" id="roomNote">點選座位換位置；空位由電腦補上。</div>
     <div class="row two"><button class="big b1" id="bStart">開始比賽</button><button class="big ghost" id="bLeave">離開房間</button></div>
     <div class="row foot"><span id="rstatus"></span></div>
@@ -126,6 +127,7 @@
 </div>
 
 <div id="toast" class="hide"></div>
+<div id="wait" class="hide"><div class="sp"></div><b>等待房主…</b><div id="waitSub"></div><small>房主回來後比賽會自動繼續</small></div>
 
 <script src="js/core.js"></script>
 <script src="js/main.js"></script>

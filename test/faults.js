@@ -2,7 +2,7 @@
 // hook (ball/player placement), then played with real touch-button presses; the on-screen #msg text is read and screenshotted.
 const { chromium } = require('playwright');
 const BASE = process.env.BASE || 'http://localhost:8077/index.html';
-const SHOT = process.env.SHOT || '/workspace/pickleball-shots/v3/';
+const SHOT = process.env.SHOT || '/workspace/pickleball-shots/v4/';
 let fails = 0; const ok = (c, t) => { console.log((c ? 'PASS ' : 'FAIL ') + t); if (!c) fails++; };
 (async () => {
   const b = await chromium.launch();

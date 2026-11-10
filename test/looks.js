@@ -16,7 +16,7 @@ const BASE = (process.env.BASEURL || 'http://localhost:8077/index.html') + '?aut
   await c.waitForTimeout(1500);
   const dots = await c.evaluate(() => [...document.querySelectorAll('.seat[data-seat]')].sort((a, b) => a.dataset.seat - b.dataset.seat).map((s) => s.dataset.seat + ':' + s.querySelector('.dot').style.background));
   const opts = await h.evaluate(() => ({ inRoom: !!document.querySelector('#roomOpts #segDiff'), dup: !!document.getElementById('segDiff2') }));
-  await h.screenshot({ path: '/workspace/pickleball-shots/v2/room_looks_host_i14.png' });
+  await h.screenshot({ path: (process.env.SHOT || '/workspace/pickleball-shots/v2/') + 'room_looks_host_i14.png' });
   await h.tap('#bStart');
   await c.waitForFunction(() => window.__pb.state === 'play', null, { timeout: 30000 }); await c.waitForTimeout(2500);
   const L = (p) => p.evaluate(() => ({ seat: window.__pb.seat, teams: window.__pb.m.teamNames, pl: window.__pb.m.players.map((q) => q.name + ':' + q.ch + '/' + q.co + ':' + q.ctrl) }));
@@ -27,7 +27,7 @@ const BASE = (process.env.BASEURL || 'http://localhost:8077/index.html') + '?aut
   const same = JSON.stringify(lh.pl.map((s) => s.split(':').slice(0, 2))) === JSON.stringify(lc.pl.map((s) => s.split(':').slice(0, 2)));
   const cos = lh.pl.map((s) => s.split(':')[1].split('/')[1]); const uniq = new Set(cos).size === cos.length;
   const hostOk = lh.pl[0].includes(':0/1:'), cliOk = lh.pl[1].split(':')[1].startsWith('1/');
-  await c.screenshot({ path: '/workspace/pickleball-shots/v2/online_2v2_client_i14.png' });
+  await c.screenshot({ path: (process.env.SHOT || '/workspace/pickleball-shots/v2/') + 'online_2v2_client_i14.png' });
   console.log('looks identical host/client:', same, ' colours unique:', uniq, ' host kept 阿岩/藍:', hostOk, ' client kept 小攀 (colour reassigned):', cliOk, ' teamNames match:', JSON.stringify(lh.teams) === JSON.stringify(lc.teams));
   console.log('console errors:', errs.length ? errs : 'none');
   const dotOk = dots[1].includes('232, 72, 59') && dots[0].includes('47, 143, 224'); console.log('room preview matches game colours:', dotOk);

@@ -4,6 +4,7 @@
 const $ = (id) => document.getElementById(id);
 const { C } = PB;
 const QS = new URLSearchParams(location.search);
+const COARSE = matchMedia('(pointer:coarse)').matches;
 const SEAT_COL = ['#2b7bff', '#ff4d5a', '#22c3e6', '#ff9b3d'];
 const TEAM_COL = ['#2b7bff', '#ff4d5a'];
 const TEAM_GRAD = ['linear-gradient(90deg,#1f5fd6,#2b7bff)', 'linear-gradient(90deg,#ff4d5a,#d6303e)'];
@@ -67,7 +68,7 @@ function proj(x, y, z) { const v = toView(x, y); return pv(v[0], v[1], z); }
 const depthOf = (x, y) => (PORT ? R * x : R * y);
 let touchUI = false;
 function safeRect() {
-  const land = W >= H, tu = touchUI && state === 'play';
+  const land = W >= H, tu = (touchUI || COARSE) && state === 'play';
   if (PORT) { // controls live below the court
     const top = H < 700 ? 100 : 106, bottom = tu ? (H < 780 ? 170 : 212) : 8;
     return { l: 6, r: W - 6, t: top, b: H - bottom };
@@ -84,18 +85,21 @@ function resize() {
   cv.width = Math.max(1, Math.round(W * DPR)); cv.height = Math.max(1, Math.round(H * DPR));
   cv.style.width = W + 'px'; cv.style.height = H + 'px';
   document.documentElement.style.setProperty('--vh', H + 'px');
+  try { if (joy.id == null) joyHome(); } catch (_) { /* not created yet during the first resize */ }
   setCam(H >= W * 0.9);
   document.body.classList.toggle('pshort', H >= W * 0.9 && H < 780);
   // fit the court (and players standing on it) into the area not covered by HUD / touch controls
   const S = safeRect(); let minx = 1e9, maxx = -1e9, miny = 1e9, maxy = -1e9;
   const pts = [];
-  if (PORT) { for (const U of [-C.HW - 0.25, C.HW + 0.25]) for (const V of [-C.K - 0.6, C.HL + 0.25]) pts.push([U, V, 0]); pts.push([0, -C.HL - 0.5, 0]); for (const U of [-C.HW, C.HW]) pts.push([U, C.HL, 2.0]); pts.push([0, C.HL + 2.4, 1.7]); }
+  if (PORT) { for (const U of [-C.HW - 0.25, C.HW + 0.25]) for (const V of [-C.K - 0.6, C.HL + 0.25]) pts.push([U, V, 0]); pts.push([0, -C.HL - 0.5, 0]); for (const U of [-C.HW, C.HW]) pts.push([U, C.HL, 2.0]); pts.push([0, C.HL + 0.6, 2.75]); } // far players' heads + name tags stay below the HUD
   else { for (const X of [-C.HL - 0.4, C.HL + 0.4]) for (const Y of [-C.HW - 0.5, C.HW + 0.3]) pts.push([X, Y, 0]); for (const X of [-C.HL, C.HL]) pts.push([X, C.HW + 0.4, 2.1]); }
   for (const [X, Y, z] of pts) { const g = g2(X, Y); const sx = g[0], sy = g[1] + z * g[2] * KZ; minx = Math.min(minx, sx); maxx = Math.max(maxx, sx); miny = Math.min(miny, sy); maxy = Math.max(maxy, sy); }
   const aw = Math.max(40, S.r - S.l), ah = Math.max(40, S.b - S.t);
   F = Math.min(aw / (maxx - minx), ah / (maxy - miny)); if (!(F > 1)) F = Math.max(1, F || 1);
   CX = (S.l + S.r) / 2 - F * (minx + maxx) / 2;
   CY = (S.t + S.b) / 2 + F * (miny + maxy) / 2;
+  { const ds = document.documentElement.style, sp = PAN; PAN = 0; // screen rows of the net and both kitchens: prompts go where players are not
+    ds.setProperty('--nety', Math.round(pv(0, 0, 0)[1]) + 'px'); ds.setProperty('--nk', Math.round(pv(0, -C.K * 0.55, 0)[1]) + 'px'); ds.setProperty('--fk', Math.round(pv(0, C.K * 0.5, 0)[1]) + 'px'); PAN = sp; }
   layer = null;
   document.body.classList.toggle('land', W >= H); document.body.classList.toggle('port', W < H);
 }
@@ -106,7 +110,8 @@ addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') setTouch
 addEventListener('touchstart', () => setTouch(true), { capture: true, passive: true });
 addEventListener('mousemove', (e) => { if (e.movementX || e.movementY) { if (performance.now() - lastTouchAt > 800) setTouch(false); } }, true);
 let lastTouchAt = 0;
-function setTouch(on) { if (on) lastTouchAt = performance.now(); if (touchUI === on) return; touchUI = on; document.body.classList.toggle('touchui', on); resize(); }
+function setTouch(on) { if (!on && COARSE) return; // phones/tablets keep the touch controls (and the court size) even after a key press
+ if (on) lastTouchAt = performance.now(); if (touchUI === on) return; touchUI = on; document.body.classList.toggle('touchui', on); resize(); }
 
 function quadV(c, pts, fill) { c.beginPath(); pts.forEach((p, i) => { const q = pv(p[0], p[1], p[2] || 0); i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]); }); c.closePath(); c.fillStyle = fill; c.fill(); }
 function quad(c, pts, fill) { c.beginPath(); pts.forEach((p, i) => { const q = proj(p[0], p[1], p[2] || 0); i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]); }); c.closePath(); c.fillStyle = fill; c.fill(); }
@@ -137,10 +142,11 @@ function buildLayer() {
     const rg = c.createRadialGradient(x, y, 0, x, y, W * 0.32); rg.addColorStop(0, 'rgba(170,120,255,.45)'); rg.addColorStop(0.4, 'rgba(110,70,230,.16)'); rg.addColorStop(1, 'rgba(60,30,160,0)'); c.fillStyle = rg; c.fillRect(x - W * 0.32, y - W * 0.32, W * 0.64, W * 0.64);
     const bg = c.createLinearGradient(x, y, x, wallBot); bg.addColorStop(0, 'rgba(190,160,255,.35)'); bg.addColorStop(1, 'rgba(190,160,255,0)'); c.fillStyle = bg; c.beginPath(); c.moveTo(x - 3, y); c.lineTo(x + 3, y); c.lineTo(x + 26, wallBot); c.lineTo(x - 26, wallBot); c.closePath(); c.fill(); }
   // back wall + banner board with our own branding
+  const BZ = 0.25, BT = 1.1;
   quadV(c, [[-40, wy, 0], [40, wy, 0], [40, wy, 1.25], [-40, wy, 1.25]], '#120e2c');
-  quadV(c, [[-5.2, wy - 0.02, 0.25], [5.2, wy - 0.02, 0.25], [5.2, wy - 0.02, 1.1], [-5.2, wy - 0.02, 1.1]], '#241a5a');
-  { const q = pv(0, wy - 0.03, 0.5); c.save(); c.textAlign = 'center'; c.textBaseline = 'middle'; c.font = `900 ${Math.max(10, q[2] * 0.62)}px sans-serif`; c.shadowColor = '#b48cff'; c.shadowBlur = 12; c.fillStyle = '#f3ecff'; c.fillText('匹克球對決 PICKLE DUEL', q[0], q[1]); c.restore();
-    const a = pv(-5.2, wy - 0.03, 1.1), b = pv(5.2, wy - 0.03, 1.1); c.strokeStyle = 'rgba(180,140,255,.9)'; c.lineWidth = 2; c.shadowColor = '#a070ff'; c.shadowBlur = 10; c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke(); c.shadowBlur = 0; }
+  if (false) { quadV(c, [[-4.4, wy - 0.02, BZ], [4.4, wy - 0.02, BZ], [4.4, wy - 0.02, BT], [-4.4, wy - 0.02, BT]], '#241a5a');
+  const q = pv(0, wy - 0.03, (BZ + BT) / 2 - 0.05); c.save(); c.textAlign = 'center'; c.textBaseline = 'middle'; c.font = `900 ${Math.max(9, q[2] * (PORT ? 0.42 : 0.62))}px sans-serif`; c.shadowColor = '#b48cff'; c.shadowBlur = 12; c.fillStyle = '#f3ecff'; c.fillText('匹克球對決 PICKLE DUEL', q[0], q[1]); c.restore();
+    const a = pv(-4.4, wy - 0.03, BT), b = pv(4.4, wy - 0.03, BT); c.strokeStyle = 'rgba(180,140,255,.9)'; c.lineWidth = 2; c.shadowColor = '#a070ff'; c.shadowBlur = 10; c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke(); c.shadowBlur = 0; } // portrait: the brand lives in the HUD (#brand) so it never sits behind the far players
   // floor: one dark mottled purple-grey surface (court and run-off alike, like a night arena)
   c.fillStyle = '#3a3550'; c.fillRect(x0, pv(0, ny, 0)[1], LW, H); quadV(c, [[-40, ny], [40, ny], [40, wy], [-40, wy]], '#3a3550');
   c.save(); c.beginPath(); { const pts = [[-40, ny], [40, ny], [40, wy], [-40, wy]].map((p) => pv(p[0], p[1], 0)); pts.forEach((q, i) => (i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]))); } c.closePath(); c.clip();
@@ -152,6 +158,7 @@ function buildLayer() {
     for (let n = 0; n < 9; n++) { pts.push(pv(u, v, 0)); a += (rnd() - 0.5) * 1.6; const st = 0.35 + rnd() * 0.5; u += Math.cos(a) * st; v += Math.sin(a) * st * 1.4; }
     for (const [w, col, bl] of [[6, 'rgba(140,90,255,.30)', 16], [1.6, 'rgba(205,180,255,.62)', 8]]) { c.strokeStyle = col; c.lineWidth = w; c.shadowColor = '#8a5cff'; c.shadowBlur = bl; c.beginPath(); pts.forEach((q, i) => (i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]))); c.stroke(); } }
   c.shadowBlur = 0; c.restore();
+  quad(c, [[-C.HL, -C.HW], [C.HL, -C.HW], [C.HL, C.HW], [-C.HL, C.HW]], 'rgba(52,47,72,.62)'); // veins/texture fainter inside the court so the ball reads
   // court: kitchen tinted, thin bright white lines
   quad(c, [[-C.K, -C.HW], [C.K, -C.HW], [C.K, C.HW], [-C.K, C.HW]], 'rgba(150,110,255,.16)');
   const lw = 0.055, white = '#ffffff';
@@ -187,16 +194,19 @@ function drawNet(c) {
   for (const i of [0, N]) { const a = bot[i], b = top[i]; c.strokeStyle = '#222'; c.lineWidth = Math.max(3, a[2] * 0.08); c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1] - a[2] * 0.06); c.stroke(); }
 }
 function rr(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
+const teamCo = (t) => { if (!m) return t; const q = m.players.find((pp) => pp.team === t); return q && q.co != null ? q.co : t; };
 function drawPlayer(c, p, me) {
-  const pos = p.rp || p; const q = proj(pos.x, pos.y, 0), s = q[2], x = q[0], y = q[1];
+  const PM_ = PORT || H < 430 ? 1.32 : 1, minS = PORT ? (H * 0.066) / (1.72 * KZ * PM_) : 0; // far-court players never shrink below ~6.6% of the screen height
+  const pos = p.rp || p; const q = proj(pos.x, pos.y, 0), s = Math.max(q[2], minS), x = q[0], y = q[1];
+  const tcol = COLS[teamCo(p.team)]; // team identity: foot ring + name tag in the team colour (outfit/paddle = the player's own colour)
   const co = p.co != null ? p.co : p.i % 4, col = COLS[co], face = PORT ? ((m ? proj(m.ball.x, m.ball.y, 0)[0] : W / 2) >= x ? 1 : -1) : (proj(0, pos.y, 0)[0] >= x ? 1 : -1); // face the net (landscape) / the ball (portrait)
   const spd = Math.hypot(p.vx || 0, p.vy || 0); const now = performance.now() / 1000;
   p.walk = (p.walk || 0) + spd * 0.045;
   // shadow + "me" ring
   c.fillStyle = 'rgba(0,0,0,.28)'; c.beginPath(); c.ellipse(x, y, Math.max(0, s * 0.36), Math.max(0, s * 0.12), 0, 0, 7); c.fill();
-  c.strokeStyle = col; c.globalAlpha = 0.75; c.lineWidth = Math.max(1.5, s * 0.03); c.stroke(); c.globalAlpha = 1;
+  c.strokeStyle = tcol; c.globalAlpha = 0.95; c.lineWidth = Math.max(2.5, s * 0.06); c.stroke(); c.globalAlpha = 1;
   if (me) { c.strokeStyle = '#ffe14d'; c.lineWidth = Math.max(2, s * 0.04); c.beginPath(); c.ellipse(x, y, Math.max(0, s * 0.5), Math.max(0, s * 0.17), 0, 0, 7); c.stroke(); }
-  const k = (s * 1.72 * KZ * (PORT || H < 430 ? 1.32 : 1)) / BODY; // sprite px -> screen px (arcade scale-up on phones)
+  const k = (s * 1.72 * KZ * PM_) / BODY; // sprite px -> screen px (arcade scale-up on phones)
   const sw = p.swing || 0, shot = p.swingShot, t = 1 - sw, ph = sw > 0 ? Math.sin(Math.PI * t) : 0;
   const idle = spd < 0.5 && sw <= 0, bob = idle ? Math.sin(now * 7 + p.i) * 0.015 : 0;
   const sqx = 1 + ph * 0.07 + (idle ? 0.03 : 0), sqy = 1 - ph * 0.1 - (idle ? 0.05 : 0) + bob; // squash on contact, crouched ready stance
@@ -227,14 +237,16 @@ function drawPlayer(c, p, me) {
   const nm = (me ? '▼ ' : '') + p.name;
   c.font = `800 ${Math.max(10, Math.min(14, s * 0.2))}px sans-serif`; c.textAlign = 'center';
   const tw = c.measureText(nm).width + 10, ly = y - BODY * k * 1.06 - 4;
-  c.fillStyle = me ? 'rgba(255,225,77,.92)' : 'rgba(0,0,0,.55)'; rr(c, x - tw / 2, ly - 13, tw, 17, 8); c.fill();
-  c.fillStyle = col; c.fillRect(x - tw / 2 + 3, ly + 2, tw - 6, 2);
-  c.fillStyle = me ? '#13213f' : '#fff'; c.fillText(nm, x, ly);
+  c.fillStyle = me ? 'rgba(255,225,77,.95)' : tcol; c.globalAlpha = me ? 1 : 0.88; rr(c, x - tw / 2, ly - 13, tw, 17, 8); c.fill(); c.globalAlpha = 1;
+  c.strokeStyle = tcol; c.lineWidth = 2; c.stroke();
+  c.fillStyle = me ? '#13213f' : '#fff'; c.save(); if (!me) { c.shadowColor = 'rgba(0,0,0,.6)'; c.shadowBlur = 2; } c.fillText(nm, x, ly); c.restore();
   if (m && m.phase === 'serve' && m.server === p.i) { c.fillStyle = '#ffe14d'; c.font = `900 ${Math.max(10, s * 0.18)}px sans-serif`; c.fillText('發球', x, ly - 16); }
 }
+let lastBallR = 0;
 function drawBall(c, b) {
   const q = proj(b.x, b.y, b.z), s = q[2];
-  const r = Math.max(3.4, s * C.R * 2.4);
+  const BS = PORT || H < 430 ? 1.5 : 1, r = Math.max(BS > 1 ? 4.4 : 3.4, s * C.R * 2.4) * BS; // phones: bigger ball (and never a speck at the far end)
+  lastBallR = r;
   if (trail.length > 1) { // glowing ribbon
     c.save(); c.lineCap = 'round'; c.lineJoin = 'round'; c.shadowColor = '#ffe94a'; c.shadowBlur = 12;
     for (let i = 1; i < trail.length; i++) { const a = proj(trail[i - 1].x, trail[i - 1].y, trail[i - 1].z), bq = proj(trail[i].x, trail[i].y, trail[i].z), k = i / trail.length;
@@ -245,11 +257,12 @@ function drawBall(c, b) {
   const gr = c.createRadialGradient(q[0] - r * 0.35, q[1] - r * 0.35, r * 0.1, q[0], q[1], r);
   gr.addColorStop(0, '#ffffd0'); gr.addColorStop(0.6, '#f4f53a'); gr.addColorStop(1, '#c9cf14');
   c.fillStyle = gr; c.beginPath(); c.arc(q[0], q[1], r, 0, 7); c.fill(); c.restore();
+  c.strokeStyle = 'rgba(25,18,0,.9)'; c.lineWidth = Math.max(1.3, r * 0.22); c.beginPath(); c.arc(q[0], q[1], r, 0, 7); c.stroke(); // dark outline for contrast
   c.fillStyle = 'rgba(140,150,10,.55)'; for (const [dx, dy] of [[-0.35, -0.1], [0.25, -0.35], [0.15, 0.35]]) { c.beginPath(); c.arc(q[0] + dx * r, q[1] + dy * r, r * 0.16, 0, 7); c.fill(); }
 }
 function drawShadow(c, b) {
-  const g = proj(b.x, b.y, 0), s = g[2], a = Math.max(0.12, 0.5 - b.z * 0.08);
-  c.fillStyle = `rgba(0,0,0,${a})`; c.beginPath(); c.ellipse(g[0], g[1], Math.max(3, s * 0.07), Math.max(1.5, s * 0.025), 0, 0, 7); c.fill();
+  const g = proj(b.x, b.y, 0), s = g[2], a = Math.max(0.3, 0.75 - b.z * 0.1), BS = PORT || H < 430 ? 1.5 : 1;
+  c.fillStyle = `rgba(0,0,0,${a})`; c.beginPath(); c.ellipse(g[0], g[1], Math.max(4, s * 0.08 * BS), Math.max(2, s * 0.03 * BS), 0, 0, 7); c.fill();
 }
 function render(dt) {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -326,7 +339,16 @@ $('bSound').textContent = sound ? '🔊' : '🔇';
 // ---------- messages / HUD ----------
 let hintKey = '', hintPt = null;
 let msgTimer = 0, lastFault = null, lastReason = ''; const hitCount = {};
-function showMsg(a, b, cls, dur) { const e = $('msg'); $('msgA').textContent = a; $('msgB').textContent = b || ''; e.className = cls || 'info'; void e.offsetWidth; e.style.animation = 'none'; void e.offsetWidth; e.style.animation = ''; clearTimeout(msgTimer); msgTimer = setTimeout(() => e.classList.add('hide'), dur || 1700); }
+// portrait: put the call/fault box on a court row that is clear of my own player (near kitchen, near backcourt, far kitchen)
+function placeMsg(force) {
+  const e = $('msg'); if (!PORT || e.classList.contains('hide')) { if (e.style.top) e.style.top = ''; return; }
+  const me = m && m.players[mySeat]; if (!me) return; const hh = (e.offsetHeight || 60) * 0.6 + 8; // room for the pop-in scale
+  const f = proj(me.x, me.y, 0), hd = proj(me.x, me.y, 2.3), y0 = hd[1] - 22, y1 = f[1] + 8; // head + name tag .. feet
+  const rows = [pv(0, -C.K * 0.55, 0)[1], pv(0, -(C.K + C.HL) * 0.5 - 0.6, 0)[1], pv(0, C.K * 0.5, 0)[1]];
+  const cur = parseFloat(e.style.top); const clear = (y) => y + hh < y0 || y - hh > y1;
+  if (!force && cur && clear(cur)) return; const y = rows.find(clear); e.style.top = Math.round(y != null ? y : rows[0]) + 'px';
+}
+function showMsg(a, b, cls, dur) { const e = $('msg'); $('msgA').textContent = a; $('msgB').textContent = b || ''; e.className = cls || 'info'; void e.offsetWidth; e.style.animation = 'none'; void e.offsetWidth; e.style.animation = ''; clearTimeout(msgTimer); msgTimer = setTimeout(() => e.classList.add('hide'), dur || 1700); e.style.top = ''; placeMsg(true); }
 function toast(t) { const e = $('toast'); e.textContent = t; e.classList.remove('hide'); clearTimeout(toast.t); toast.t = setTimeout(() => e.classList.add('hide'), 2600); }
 const teamOf = (i) => i % 2;
 function handleEvent(e) {
@@ -401,7 +423,8 @@ const jb = $('joyBase'), jk = $('joyKnob'), jz = $('joyZone');
 function joyPos(cx, cy) { const dx = cx - joy.ox, dy = cy - joy.oy, l = Math.hypot(dx, dy), max = 52, k = l > max ? max / l : 1; jk.style.transform = `translate(${dx * k}px,${dy * k}px)`; const n = Math.min(1, l / max); inp.jx = l > 6 ? (dx / l) * n : 0; inp.jy = l > 6 ? (-dy / l) * n : 0; }
 jz.addEventListener('pointerdown', (e) => { audio(); setTouch(true); joy.id = e.pointerId; const r = jz.getBoundingClientRect(); joy.ox = e.clientX; joy.oy = e.clientY; jb.style.left = e.clientX - r.left + 'px'; jb.style.top = e.clientY - r.top + 'px'; jb.classList.add('on'); joyPos(e.clientX, e.clientY); try { jz.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); });
 jz.addEventListener('pointermove', (e) => { if (e.pointerId === joy.id) joyPos(e.clientX, e.clientY); });
-const joyEnd = (e) => { if (e.pointerId !== joy.id) return; joy.id = null; inp.jx = inp.jy = 0; jk.style.transform = ''; jb.classList.remove('on'); };
+const joyHome = () => { jb.style.left = jb.style.top = ''; jk.style.transform = ''; jb.classList.remove('on'); };
+const joyEnd = (e) => { if (e.pointerId !== joy.id) return; joy.id = null; inp.jx = inp.jy = 0; joyHome(); };
 jz.addEventListener('pointerup', joyEnd); jz.addEventListener('pointercancel', joyEnd);
 document.querySelectorAll('.tb').forEach((b) => {
   b.addEventListener('pointerdown', (e) => { audio(); setTouch(true); b.classList.add('on'); press(b.dataset.shot); e.preventDefault(); });
@@ -458,7 +481,7 @@ function seatsLocal(mode) {
 }
 const myPid = (() => { try { let v = localStorage.pbPid; if (!v) { v = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.pbPid = v; } return v; } catch (_) { return 'x' + Math.random().toString(36).slice(2, 10); } })();
 function myName() { const v = $('nick').value.trim(); return (v || autoNick).slice(0, 8); }
-const autoNick = '玩家' + ((Math.random() * 900 + 100) | 0);
+const autoNick = (() => { try { let v = localStorage.pbAutoNick; if (!v) { v = '玩家' + ((Math.random() * 900 + 100) | 0); localStorage.pbAutoNick = v; } return v; } catch (_) { return '玩家' + ((Math.random() * 900 + 100) | 0); } })(); // generated once per device, kept across reloads
 function startLocal(mode) {
   role = 'local'; mySeat = 0; R = 1;
   const seats = seatsLocal(mode); const cfg = { mode, diff: opt.diff, target: opt.target, seats, teamNames: teamNamesOf(seats), firstServe: Math.random() < 0.5 ? 0 : 1 };
@@ -486,6 +509,7 @@ function endGame() {
   $('end').classList.remove('hide'); $('touch').classList.add('hide');
 }
 function toMenu(msg) {
+  showWait(false); hostAway = false; hostAwayMsg = false;
   state = 'menu'; m = null; role = 'local'; R = 1; layer = null;
   ['room', 'end', 'pause', 'hud', 'touch', 'keys', 'tip', 'msg'].forEach((i) => $(i).classList.add('hide'));
   optHome(); $('menu').classList.remove('hide'); st(msg || ''); resize();
@@ -523,6 +547,12 @@ $('bRules').onclick = showRules; $('bRules2').onclick = showRules; $('bRulesOk')
 $('code').addEventListener('input', () => { $('code').value = $('code').value.replace(/\D/g, '').slice(0, 4); });
 $('code').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('bJoin').click(); });
 if (QS.get('room')) { $('code').value = QS.get('room').replace(/\D/g, '').slice(0, 4); }
+// auto-rejoin: a guest that was in a match in this room within the last 10 minutes joins again by itself after a reload
+const lastMatch = { get() { try { return JSON.parse(localStorage.pbLast || 'null'); } catch (_) { return null; } }, set(v) { try { if (v) localStorage.pbLast = JSON.stringify(v); else localStorage.removeItem('pbLast'); } catch (_) {} } };
+function markInMatch() { if (role === 'client' && roomCode && state === 'play') { lastMatch.set({ room: roomCode, t: Date.now() });
+  try { const u = new URL(location.href); if (u.searchParams.get('room') !== roomCode) { u.searchParams.set('room', roomCode); history.replaceState(null, '', u); } } catch (_) {} } } // a reload of this tab rejoins by itself
+setInterval(markInMatch, 4000);
+setTimeout(() => { const lm = lastMatch.get(), rc = $('code').value; if (lm && rc && lm.room === rc && Date.now() - lm.t < 10 * 60 * 1000 && state === 'menu') { st('自動重新加入比賽…'); join(rc); } }, 300);
 
 // ---------- networking (same WebSocket relay protocol as 攀岩 peak2d: create / join / msg, host-authoritative) ----------
 const RELAY_URL = QS.get('server') || 'wss://panjian-peak2d.onrender.com/ws';
@@ -567,7 +597,7 @@ function connect(first, onMsg, dl, gen) {
 }
 function optHome() { $('menuOpts').appendChild($('optCore')); ['segDiff', 'segTarget'].forEach((id) => $(id).classList.remove('dis')); }
 function showMenuOnly() { optHome(); $('room').classList.add('hide'); $('menu').classList.remove('hide'); state = 'menu'; }
-function leaveRoom() { connGen++; wsend({ t: 'leave' }); const w = ws; ws = null; net = false; try { w && w.close(); } catch (_) {} isHost = false; toMenu(); }
+function leaveRoom() { lastMatch.set(null); connGen++; wsend({ t: 'leave' }); const w = ws; ws = null; net = false; try { w && w.close(); } catch (_) {} isHost = false; toMenu(); }
 $('bLeave').onclick = leaveRoom;
 function openRoom() {
   state = 'room'; m = null; R = 1; layer = null;
@@ -662,7 +692,7 @@ function join(code) {
     if (msg.t === 'joined') { clearTimeout(joinTimer); myId = msg.id; net = true; toHost({ t: 'hello', game: 'pickleball', n: myName(), pid: myPid, ...myLook() }); st(msg.started ? '加入進行中的比賽…' : '');
       clearTimeout(cfgTimer); cfgTimer = setTimeout(() => { if (state === 'menu' && net) { failNet('這個房號不是匹克球房間'); wsend({ t: 'leave' }); } }, 6000);
       if (!msg.started) openRoom(); }
-    else if (msg.t === 'host-left') { net = false; toMenu('房主離開了，房間已關閉'); toast('房主離開了，房間已關閉'); try { ws && ws.close(); } catch (_) {} ws = null; }
+    else if (msg.t === 'host-left') { lastMatch.set(null); net = false; toMenu('房主離開了，房間已關閉'); toast('房主離開了，房間已關閉'); try { ws && ws.close(); } catch (_) {} ws = null; }
     else if (msg.t === 'msg') clientHandle(msg.d);
   });
 }
@@ -674,18 +704,20 @@ function clientHandle(d) {
     const seat = d.seat; const cfg = { ...d.cfg, seats: d.cfg.seats.map((s, i) => ({ name: s.name, ctrl: i === seat ? 'local' : 'net', ch: s.ch, co: s.co })) };
     role = seat >= 0 ? 'client' : 'spectator'; mySeat = seat >= 0 ? seat : -1;
     R = seat >= 0 && teamOf(seat) === 1 ? -1 : 1; layer = null;
-    beginMatch(cfg); m.events.length = 0; if (d.snap) { applySnap(d.snap); m.pred = null; for (const p of m.players) { p.rp = { x: p.x = p.tx != null ? p.tx : p.x, y: p.y = p.ty != null ? p.ty : p.y }; } hudSig = ''; updHUD(); $('msg').classList.add('hide'); if (d.mid) toast('已回到比賽：' + m.score.join('-')); }
+    beginMatch(cfg); m.events.length = 0; markInMatch(); if (d.snap) { applySnap(d.snap); m.pred = null; for (const p of m.players) { p.rp = { x: p.x = p.tx != null ? p.tx : p.x, y: p.y = p.ty != null ? p.ty : p.y }; } hudSig = ''; updHUD(); $('msg').classList.add('hide'); if (d.mid) { const mt = seat >= 0 ? teamOf(seat) : 0; toast(`已回到比賽：${m.teamNames[mt]} ${m.score[mt]} - ${m.score[1 - mt]} ${m.teamNames[1 - mt]}`); } }
     if (role === 'spectator') { $('touch').classList.add('hide'); toast('觀戰中'); }
     if (role === 'spectator') role = 'spectator';
   }
   else if (d.t === 's') applySnap(d);
   else if (d.t === 'looks') { if (m) { m.players.forEach((p, i) => { if (d.n[i] != null) p.name = d.n[i]; if (d.ch[i] != null) p.ch = d.ch[i]; if (d.co[i] != null) p.co = d.co[i]; }); if (d.tn) m.teamNames = d.tn; } hudSig = ''; }
   else if (d.t === 'names') { if (m) d.n.forEach((n, i) => { if (m.players[i]) m.players[i].name = n; }); hudSig = ''; }
-  else if (d.t === 'room') { m = null; openRoom(); }
+  else if (d.t === 'room') { m = null; showWait(false); openRoom(); }
+  else if (d.t === 'away') { hostAwayMsg = true; showWait(true, '房主暫時離開（切到背景）'); }
+  else if (d.t === 'back') { hostAwayMsg = false; showWait(false); toast('房主回來了，比賽繼續'); }
 }
 const ballOff = { x: 0, y: 0, z: 0 };
 function applySnap(d) {
-  if (!m) return; lastSnapAt = performance.now();
+  if (!m) return; lastSnapAt = performance.now(); if (waitOn && !hostAwayMsg) showWait(false);
   const newPoint = d.pt !== m.point;
   m.point = d.pt; m.phase = d.ph; m.phaseT = d.pT; m.t = d.mt; m.score = d.sc; m.servingTeam = d.st; m.serverNum = d.sn; m.server = d.sv; m.receiver = d.rv; m.sides = d.sd.split('');
   m.hits = d.h; m.bounces = d.bo; m.lastHitTeam = d.lh; m.live = !!d.lv; m.winner = d.w; if (d.rl != null) m.rally = d.rl;
@@ -700,7 +732,20 @@ function applySnap(d) {
   for (const e of d.ev || []) handleEvent(e);
   if (d.ph === 'over' && state === 'play') endGame();
 }
+// ---- host away (app switched / tab hidden): the room pauses cleanly and guests see 「等待房主…」 ----
+let hostAway = false, hostResumeT = 0, hostAwayMsg = false, waitOn = false;
+function showWait(on, sub) { waitOn = on; $('wait').classList.toggle('hide', !on); if (on) $('waitSub').textContent = sub || '連線停頓中…'; }
+function onVis() {
+  const hidden = document.visibilityState === 'hidden';
+  if (!hidden) lastFrame = performance.now(); // no huge dt after coming back (the frame dt is capped as well)
+  if (isHost && net && m && (state === 'play' || state === 'end')) {
+    if (hidden && !hostAway) { hostAway = true; outbox.length = 0; toAll(snapshot()); toAll({ t: 'away' }); }
+    else if (!hidden && hostAway) { hostAway = false; hostResumeT = 0.9; toAll({ t: 'back' }); showMsg('繼續比賽', '', 'info call', 900); }
+  } else if (hidden && role === 'local' && state === 'play' && $('pause').classList.contains('hide')) togglePause();
+}
+document.addEventListener('visibilitychange', onVis); addEventListener('pagehide', () => { if (document.visibilityState !== 'hidden') return; onVis(); });
 function clientTick(dt) {
+  if (state === 'play' && !waitOn && performance.now() - lastSnapAt > 1600) showWait(true, '沒有收到房主的畫面，等待中…'); // host frozen without a visibility event (e.g. iOS)
   // own movement (client-side prediction), others interpolate, ball dead-reckoning
   for (const p of m.players) {
     if (p.i === mySeat && role === 'client') { const mv = localInput(p); PB.movePlayer(m, p, mv.mx, mv.my, C.SPEED, dt); p.rp = { x: p.x, y: p.y }; continue; }
@@ -709,7 +754,7 @@ function clientTick(dt) {
     p.vx = (nx - p.rp.x) / dt; p.vy = (ny - p.rp.y) / dt; p.rp = { x: nx, y: ny }; p.x = nx; p.y = ny;
     if (p.swing > 0) p.swing = Math.max(0, p.swing - dt * 3.2);
   }
-  if (m.phase !== 'serve' && performance.now() - lastSnapAt < 400) {
+  if (m.phase !== 'serve' && !waitOn && performance.now() - lastSnapAt < 400) {
     const b = m.ball, h = dt / 4;
     for (let i = 0; i < 4; i++) { const px = b.x; b.vz -= C.G * h; b.x += b.vx * h; b.y += b.vy * h; b.z += b.vz * h;
       if ((px < 0) !== (b.x < 0) && Math.abs(b.y) < C.NET_HALF && b.z < PB.netH(b.y)) { b.x = px; b.vx *= -0.12; }
@@ -737,12 +782,13 @@ function frameBody(now) {
   if (m && (state === 'play' || state === 'end')) {
     if (role === 'local' || role === 'host') {
       const me = m.players[mySeat]; if (me && me.ctrl === 'local') localInput(me);
-      if (!paused) PB.step(m, dt);
+      if (hostResumeT > 0) hostResumeT -= dt;
+      if (!paused && !hostAway && !(role === 'host' && hostResumeT > 0)) PB.step(m, dt);
       const k = 1 - Math.exp(-dt * 18);
       for (const p of m.players) { if (p.ctrl === 'remote') { p.rp = p.rp ? { x: p.rp.x + (p.x - p.rp.x) * k, y: p.rp.y + (p.y - p.rp.y) * k } : { x: p.x, y: p.y }; } else p.rp = null; }
       const evs = m.events.splice(0); evs.forEach(handleEvent); if (role === 'host') { outbox.push(...evs); hostTick(dt); }
     } else clientTick(dt);
-    updHUD();
+    updHUD(); placeMsg(false);
   }
   try { render(dt); } catch (err) { layer = null; if (!frame.warned) { frame.warned = 1; console.warn('render recovered', err && err.message); } }
 }
@@ -750,5 +796,5 @@ resize();
 function loop(now) { frame(now); requestAnimationFrame(loop); }
 requestAnimationFrame(loop);
 // test hooks
-window.__pb = { looks: () => ({ room, prefs, rs: roomSeats() }), get m() { return m; }, proj, get view() { return { W, H, F, touchUI, port: PORT, pan: PAN, safe: safeRect() }; }, get state() { return state; }, get role() { return role; }, get room() { return roomCode; }, get roster() { return roster; }, get net() { return net; }, get fps() { return fps; }, get seat() { return mySeat; }, hitCount, startLocal, press };
+window.__pb = { looks: () => ({ room, prefs, rs: roomSeats() }), get m() { return m; }, proj, get view() { return { W, H, F, touchUI, port: PORT, pan: PAN, safe: safeRect(), ballR: lastBallR }; }, get state() { return state; }, get role() { return role; }, get room() { return roomCode; }, get roster() { return roster; }, get net() { return net; }, get fps() { return fps; }, get seat() { return mySeat; }, hitCount, startLocal, press };
 })();

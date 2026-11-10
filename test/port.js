@@ -4,7 +4,7 @@
 const { chromium } = require('playwright');
 const BASE = process.env.BASE || 'http://localhost:8077/index.html';
 const SERVER = process.env.SERVER || 'ws://localhost:10077/ws';
-const SHOT = process.env.SHOT || '/workspace/pickleball-shots/v3/';
+const SHOT = process.env.SHOT || '/workspace/pickleball-shots/v4/';
 let fails = 0; const ok = (c, t) => { console.log((c ? 'PASS ' : 'FAIL ') + t); if (!c) fails++; };
 const DEV = [
   { tag: 'iphone14_390x844', w: 390, h: 844, dpr: 3, shots: true },

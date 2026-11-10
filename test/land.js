@@ -1,7 +1,7 @@
 // Landscape is still supported (secondary since v3a, portrait is primary). Real-phone landscape checks: hasTouch/isMobile/high DPR, several iPhone/Android sizes, rotation before and during a match, address-bar height changes.
 const { chromium } = require('playwright');
 const BASE = process.env.BASE || 'http://localhost:8077/index.html';
-const OUT = process.env.OUT || '/workspace/pickleball-shots/v2/';
+const OUT = process.env.OUT || '/tmp/landshots/';
 const UA_IOS = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
 const UA_AND = 'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36';
 const DEV = [

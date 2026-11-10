@@ -157,3 +157,21 @@ body.pshort #joyBase{width:104px;height:104px;margin:-52px 0 0 -52px;left:84px;t
 .logo>div:first-child{transform:scale(.75)}.row{margin:4px 0}.row input{padding:6px 10px}h2{margin:3px 0 2px;font-size:13px}
 .big{padding:8px 12px;font-size:15px}.row.foot{min-height:20px}#lookPrev{width:40px;height:70px}.seg button{padding:4px 9px}
 .tm .sc{font-size:15px}#call{font-size:17px}}
+/* guests: host away / no host frames */
+#wait{position:fixed;left:50%;top:38%;transform:translate(-50%,-50%);z-index:9;background:rgba(10,8,30,.86);border:1px solid rgba(190,160,255,.45);border-radius:16px;padding:14px 22px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,.5);pointer-events:none}
+#wait b{display:block;font-size:20px;color:#ffe94a;margin:6px 0 2px}#wait #waitSub{font-size:13px;opacity:.9}#wait small{display:block;font-size:11px;opacity:.65;margin-top:4px}
+#wait .sp{width:26px;height:26px;margin:0 auto;border-radius:50%;border:3px solid rgba(255,255,255,.25);border-top-color:#ffe94a;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+/* R3: prompts never on top of your own player */
+body.port #tip,body.port.touchui #tip{top:var(--fk,30%);bottom:auto;transform:translate(-50%,-50%);font-size:13px;max-width:92vw;white-space:normal;text-align:center}
+body.port #msg.call{top:var(--nk,62%)}
+body.land #msg:not(.call){top:64px}
+body.land #msg.call{top:64px}
+.lookNote{font-size:11.5px;opacity:.8;line-height:1.35}
+
+/* v4: portrait brand in the HUD corner (the wall banner sat behind the far players) */
+#brand{display:none}
+body.port #brand{display:block;position:absolute;right:calc(10px + env(safe-area-inset-right));top:calc(52px + env(safe-area-inset-top));text-align:right;font:900 10px/1.15 sans-serif;letter-spacing:.5px;color:#f3ecff;text-shadow:0 0 8px #b48cff,0 0 2px #7a50ff;opacity:.9;pointer-events:none}
+body.land #brand{display:block;position:absolute;left:50%;transform:translateX(-50%);top:calc(10px + env(safe-area-inset-top));font:900 13px/1 sans-serif;letter-spacing:1px;color:#f3ecff;text-shadow:0 0 8px #b48cff,0 0 2px #7a50ff;opacity:.85;pointer-events:none;white-space:nowrap}
+body.land #brand br{display:none}
+body.land #brand::after{content:''}

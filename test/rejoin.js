@@ -2,7 +2,7 @@
 const { chromium } = require('playwright');
 const SERVER = process.env.SERVER || 'ws://localhost:10077/ws';
 const BASE = (process.env.BASEURL || 'http://localhost:8077/index.html') + '?auto=1&server=' + encodeURIComponent(SERVER);
-const SHOT = process.env.SHOT || '/workspace/pickleball-shots/v3/';
+const SHOT = process.env.SHOT || '/workspace/pickleball-shots/v4/';
 let fails = 0; const ok = (c, t) => { console.log((c ? 'PASS ' : 'FAIL ') + t); if (!c) fails++; };
 (async () => {
   const b = await chromium.launch(); const errs = []; const P = [];
@@ -25,6 +25,7 @@ let fails = 0; const ok = (c, t) => { console.log((c ? 'PASS ' : 'FAIL ') + t); 
     await h.waitForFunction((p0) => window.__pb.m && window.__pb.m.point >= p0 + 2, before.pt, { timeout: 120000 });
     const look0 = (await S(h)).P[seat];
     if (seat === 1) await tab.evaluate(() => localStorage.removeItem('pbPid')); // second case: new device id -> nickname fallback
+    await tab.evaluate(() => localStorage.removeItem('pbLast')); // this test covers the manual rejoin path (auto-rejoin has its own test)
     await tab.reload(); await tab.waitForTimeout(800);
     const hv = await S(h); ok(hv.P[seat].includes('|ai'), `[${name}] after reload host gives seat ${seat} to the CPU, look kept (${hv.P[seat]})`);
     // a few points pass with the CPU in the seat

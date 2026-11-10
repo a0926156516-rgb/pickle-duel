@@ -113,15 +113,6 @@ body.land.touchui #tip{top:auto;bottom:calc(8px + env(safe-area-inset-bottom))}
 #msg{top:46%;background:rgba(8,16,34,.78);padding:6px 18px 8px;border-radius:16px;box-shadow:0 6px 20px rgba(0,0,0,.35)}
 #msgA{font-size:clamp(20px,4.2vw,40px)}
 @media (max-height:430px){#msgA{font-size:24px}#msgB{font-size:15px}#lookPrev{width:44px;height:77px}}
-/* portrait (primary layout): full-width score bar, names never truncated to "…" */
-body.port #board{width:calc(100vw - 104px);max-width:none}
-body.port .tm{flex:1 1 0;padding:4px 6px;gap:4px}
-body.port #tmR{justify-content:flex-end}
-body.port .tm .nm{max-width:none;flex:1 1 auto;font-size:10.5px;line-height:1.25;white-space:nowrap;text-overflow:clip;letter-spacing:-.3px}
-body.port .tm .sc{font-size:24px;min-width:22px}
-body.port .mid{min-width:0;flex:0 1 auto;padding:3px 6px}
-body.port #call{font-size:20px}
-body.port #srv{white-space:normal;font-size:10px;line-height:1.25;max-width:96px}
 body.port.touchui #tip{top:auto;bottom:calc(218px + env(safe-area-inset-bottom))}
 /* shorter portrait phones (SE, in-app webviews with toolbars): compact controls so the court can be larger */
 body.pshort #btns{width:184px;height:158px}
@@ -129,5 +120,35 @@ body.pshort #tbDrive{width:84px;height:84px;font-size:17px}
 body.pshort #tbDink{right:90px;bottom:2px;width:66px;height:66px}
 body.pshort #tbLob{right:10px;bottom:90px;width:66px;height:66px}
 body.pshort #joyBase{width:104px;height:104px;margin:-52px 0 0 -52px;left:84px;top:calc(100% - 84px)}
-body.port .tm .nm{font-size:10px}
-@media (max-width:370px){body.port #srv{max-width:78px;font-size:9.5px}body.port .tm .sc{font-size:20px;min-width:18px}body.port #board{width:calc(100vw - 96px)}body.port .mid{padding:3px 4px}}
+
+/* ---- v3a arena HUD: compact semi-transparent scoreboard top-left (team gradient name boxes, magenta score boxes, call box) ---- */
+#hud{justify-content:flex-start;padding-left:calc(8px + env(safe-area-inset-left))}
+#bPause{left:auto;right:calc(54px + env(safe-area-inset-right))}
+#board{display:grid;grid-template-columns:auto auto;grid-template-rows:auto auto;background:rgba(10,8,30,.55);border-radius:8px;overflow:hidden;max-width:calc(100vw - 120px);border:1px solid rgba(255,255,255,.12)}
+#hdr{grid-column:1/3;font-size:10px;font-weight:800;letter-spacing:.5px;padding:2px 8px;background:linear-gradient(90deg,#7cff5a,#22c77a);color:#0b1a10;justify-self:start;border-radius:0 0 6px 0}
+.rows{display:flex;flex-direction:column;gap:2px;padding:3px 0 3px 3px}
+.tm{display:flex;align-items:stretch;gap:0;padding:0;border-radius:4px;overflow:hidden;min-width:0}
+.tm .nm{font-size:11px;font-weight:800;line-height:1.15;padding:2px 7px;max-width:none;min-width:64px;white-space:nowrap;display:flex;flex-direction:column;justify-content:center;text-shadow:0 1px 2px rgba(0,0,0,.5)}
+.tm .sc{font-size:17px;font-weight:900;min-width:28px;text-align:center;background:linear-gradient(180deg,#ff4fe0,#c21cb0);display:flex;align-items:center;justify-content:center;padding:0 4px;text-shadow:0 1px 2px rgba(0,0,0,.4)}
+.tm.serving .sc{box-shadow:inset 0 0 0 2px #ffe94a}
+.tm.serving{box-shadow:none}
+.mid{padding:3px 8px;text-align:center;min-width:0;display:flex;flex-direction:column;justify-content:center}
+#call{font-size:20px;font-weight:900;color:#ffe94a;text-shadow:0 0 10px rgba(255,233,74,.5)}
+#srv{font-size:9.5px;opacity:.85;white-space:normal;max-width:96px;line-height:1.2}
+body.h430 .tm .sc{font-size:15px}body.h430 #call{font-size:17px}
+/* opening / point-call box: small, high, gone within about a second (never over the net and kitchen) */
+#msg.call{top:19%;padding:3px 12px 4px;border-radius:12px;background:rgba(10,8,30,.6);animation:pop .25s ease-out,fadeout 1s ease-in .7s forwards}
+#msg.call #msgA{font-size:20px}#msg.call #msgB{font-size:12px;margin-top:1px}
+@keyframes fadeout{to{opacity:0}}
+/* ---- controls: semi-transparent white-outline joystick + round outline buttons (paddle icon on 抽球) ---- */
+#joyBase{background:radial-gradient(circle,rgba(255,255,255,.06) 55%,rgba(255,255,255,.14));border:3px solid rgba(255,255,255,.55);box-shadow:0 0 0 9px rgba(255,255,255,.07),0 0 0 11px rgba(255,255,255,.22);opacity:.8}
+#joyKnob{width:46%;height:46%;margin:0;left:27%;top:27%;background:radial-gradient(circle at 40% 35%,rgba(255,255,255,.75),rgba(200,200,220,.45));border:2px solid rgba(255,255,255,.85)}
+.ar{position:absolute;width:0;height:0;border:6px solid transparent;opacity:.7}
+.ar.u{left:calc(50% - 6px);top:3px;border-bottom-color:#fff;border-top:0}.ar.d{left:calc(50% - 6px);bottom:3px;border-top-color:#fff;border-bottom:0}
+.ar.l{top:calc(50% - 6px);left:3px;border-right-color:#fff;border-left:0}.ar.r{top:calc(50% - 6px);right:3px;border-left-color:#fff;border-right:0}
+.tb{background:rgba(12,10,34,.35)!important;border:3px solid rgba(255,255,255,.85);color:#fff;box-shadow:0 0 12px rgba(160,120,255,.35);backdrop-filter:blur(2px)}
+.tb b{font-size:13px;text-shadow:0 1px 3px rgba(0,0,0,.6)}
+#tbDrive{border-width:4px}#tbDrive .pic{width:46%;height:46%;margin-bottom:-2px}#tbDrive b{font-size:14px}
+.tb.on{background:rgba(160,120,255,.45)!important}
+#tbDrive{border-radius:50%!important}
+#srv{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;height:2.4em}

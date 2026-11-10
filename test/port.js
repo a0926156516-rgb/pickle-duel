@@ -18,13 +18,13 @@ const geom = (p) => p.evaluate(() => {
   const v = __pb.view, C = PB.C, pr = (x, y, z) => __pb.proj(x, y, z || 0);
   const poly = [pr(-C.HL, -C.HW), pr(C.HL, -C.HW), pr(C.HL, C.HW), pr(-C.HL, C.HW)];
   const inPoly = (x, y) => { let c = false; for (let i = 0, j = 3; i < 4; j = i++) { const [xi, yi] = poly[i], [xj, yj] = poly[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c; } return c; };
-  const xs = poly.map((q) => q[0]), ys = poly.map((q) => q[1]);
+  const xs = poly.map((q) => q[0] - v.pan), ys = poly.map((q) => q[1]); // camera pan removed: the court is framed at rest, the pan follows the ball
   const els = [...document.querySelectorAll('#btns .tb'), document.getElementById('joyBase')].filter((e) => e.offsetParent || e.id === 'joyBase');
   let overlap = 0; for (const e of els) { const r = e.getBoundingClientRect(); for (let i = 0; i <= 8; i++) for (let k = 0; k <= 8; k++) { const x = r.left + r.width * i / 8, y = r.top + r.height * k / 8, dx = x - (r.left + r.width / 2), dy = y - (r.top + r.height / 2); if (dx * dx / (r.width * r.width / 4) + dy * dy / (r.height * r.height / 4) <= 1 && inPoly(x, y)) overlap++; } }
   const hud = document.getElementById('board').getBoundingClientRect();
   const net = pr(0, 0, 0)[1]; const me = __pb.m && __pb.m.players[__pb.seat]; const mine = me ? pr(me.x, me.y)[1] : null;
   const names = [...document.querySelectorAll('#board .nm')].map((e) => e.scrollWidth <= e.clientWidth + 1);
-  return { W: v.W, H: v.H, port: v.port, touch: v.touchUI, cw: Math.round(Math.max(...xs) - Math.min(...xs)), ch: Math.round(Math.max(...ys) - Math.min(...ys)), on: Math.min(...xs) >= 0 && Math.max(...xs) <= v.W && Math.min(...ys) >= hud.bottom - 2 && Math.max(...ys) <= v.H, overlap, n: els.length, netH: Math.abs(poly[0][1] - poly[3][1]) < 1 && Math.abs(poly[1][1] - poly[2][1]) < 1, meBelowNet: mine == null ? null : mine > net, namesFit: names.every(Boolean), cssH: document.getElementById('cv').getBoundingClientRect().height, rot: !!document.getElementById('rot') };
+  return { pan: Math.round(v.pan), W: v.W, H: v.H, port: v.port, touch: v.touchUI, cw: Math.round(Math.max(...xs) - Math.min(...xs)), ch: Math.round(Math.max(...ys) - Math.min(...ys)), on: Math.min(...xs) >= 0 && Math.max(...xs) <= v.W && Math.min(...ys) >= hud.bottom - 2 && Math.max(...ys) <= v.H, overlap, n: els.length, netH: Math.abs(poly[0][1] - poly[3][1]) < 1 && Math.abs(poly[1][1] - poly[2][1]) < 1, meBelowNet: mine == null ? null : mine > net, namesFit: names.every(Boolean), cssH: document.getElementById('cv').getBoundingClientRect().height, rot: !!document.getElementById('rot') };
 });
 (async () => {
   const b = await chromium.launch();
@@ -45,7 +45,7 @@ const geom = (p) => p.evaluate(() => {
     g = await geom(p);
     ok(await p.evaluate(() => __pb.state) === 'play' && g.touch, `[${d.tag}] touch tap on 雙打 starts the match, touch controls shown`);
     ok(g.netH && g.meBelowNet, `[${d.tag}] court vertical: net horizontal, own player below the net`);
-    ok(g.on && g.overlap === 0 && g.n === 4, `[${d.tag}] court ${g.cw}x${g.ch}px fully visible under the score bar; pad + 3 buttons never over the court (0 overlap samples)`);
+    ok(g.on && g.overlap === 0 && g.n === 4, `[${d.tag}] court ${g.cw}x${g.ch}px fully visible under the score bar; pad + 3 buttons never over the court (0 overlap samples) ${g.on && g.overlap === 0 ? '' : JSON.stringify(g)}`);
     ok(g.cw >= d.w * (d.h < 700 ? 0.65 : 0.72), `[${d.tag}] court uses ${Math.round(100 * g.cw / d.w)}% of the width`);
     ok(g.namesFit, `[${d.tag}] score-bar names not truncated`);
     if (d.shots) await p.screenshot({ path: SHOT + `portrait_play_2v2_${d.tag}.png` });
@@ -66,7 +66,7 @@ const geom = (p) => p.evaluate(() => {
     for (let k = 0; k < 2; k++) { await p.setViewportSize({ width: d.h, height: d.w }); await p.waitForTimeout(300); const q = await geom(p); if (q.port || q.overlap) ok(false, `[${d.tag}] landscape mid-match: ${JSON.stringify(q)}`); await p.setViewportSize({ width: d.w, height: d.h }); await p.waitForTimeout(300); }
     await p.setViewportSize({ width: 1888, height: 1030 }); await p.waitForTimeout(200); await p.setViewportSize({ width: 300, height: 20 }); await p.waitForTimeout(150); await p.setViewportSize({ width: d.w, height: d.h }); await p.waitForTimeout(400);
     const t0 = await p.evaluate(() => __pb.m.t); await p.waitForTimeout(500); const t1 = await p.evaluate(() => __pb.m.t);
-    g = await geom(p); ok(g.port && g.on && g.overlap === 0 && t1 > t0, `[${d.tag}] after 2 landscape round-trips + extreme resizes: portrait again, loop alive`);
+    g = await geom(p); ok(g.port && g.on && g.overlap === 0 && t1 > t0, `[${d.tag}] after 2 landscape round-trips + extreme resizes: portrait again, loop alive ${g.on && g.overlap === 0 ? '' : JSON.stringify(g)}`);
     ok(!errs.length, `[${d.tag}] no console errors/warnings ${errs.slice(0, 3).join(' | ')}`);
     await ctx.close();
   }

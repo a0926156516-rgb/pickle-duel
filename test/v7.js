@@ -30,7 +30,7 @@ let fails = 0; const ok = (c, t) => { console.log((c ? 'PASS ' : 'FAIL ') + t); 
     ok(sw === 'drive', `[${tag}] the low 殺球 is played as a (power) drive: ${sw}`);
     if (tag !== 'landscape_844x390') await p.screenshot({ path: SHOT + `low_ball_hint_${tag}.png` });
     // high ball: label back to 殺球, a real smash with shake + flash + smash sound
-    await p.waitForTimeout(400); await incoming(p, 1.75, 0.6); await p.evaluate(() => { const m = __pb.m; m.bounces = 0; Object.assign(m.ball, { x: -1.4, z: 1.7, vx: -3.2, vz: 0.5 }); m.hits++; }); await p.waitForTimeout(420);
+    await p.waitForTimeout(1300); await incoming(p, 1.75, 0.6); await p.evaluate(() => { const m = __pb.m; m.bounces = 0; Object.assign(m.ball, { x: -1.4, z: 1.7, vx: -3.2, vz: 0.5 }); m.hits++; __pb.SL.seq++; }); await p.waitForTimeout(420); // v9: ≥1.2 s between label changes, one per incoming shot (the injected ball counts as a new opponent shot)
     const hi = await p.evaluate(() => ({ lab: document.querySelector('#tbSmash b').textContent, low: __pb.smashLow, z: __pb.contactZ() }));
     const j0 = await p.evaluate(() => ({ n: __pb.juice.n, s: __pb.juice.sfx }));
     await tapEl('#tbSmash');

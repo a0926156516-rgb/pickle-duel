@@ -258,10 +258,20 @@ body.land #tbSmash{right:70px;bottom:202px;width:79px;height:79px}
 #smashCard.opp b{-webkit-text-stroke-color:#3a4b8c;text-shadow:0 0 14px rgba(120,150,255,.8),4px 4px 0 #3a4b8c}
 #smashCard.go{visibility:visible;animation:smashPop 1.4s ease-out forwards}
 @keyframes smashPop{0%{opacity:0;transform:translate(-50%,-50%) scale(.4) rotate(-8deg)}12%{opacity:1;transform:translate(-50%,-50%) scale(1.15) rotate(-4deg)}22%{transform:translate(-50%,-50%) scale(1) rotate(-4deg)}80%{opacity:1}100%{opacity:0;transform:translate(-50%,-50%) scale(1.05) rotate(-4deg)}}
-#prac{position:fixed;left:50%;transform:translateX(-50%);top:calc(6px + env(safe-area-inset-top));z-index:6;display:flex;gap:8px;align-items:center;background:rgba(10,8,30,.78);border:1px solid rgba(255,107,213,.7);border-radius:12px;padding:4px 10px;font-size:12px;white-space:nowrap;pointer-events:none}
-#prac b{color:#ff8be0}#prac i{font-style:normal;font-weight:800;color:#ffe14d}
-body.port #prac{top:auto;bottom:calc(218px + env(safe-area-inset-bottom));gap:6px;font-size:11px;padding:3px 8px}
-body.port.pshort #prac{bottom:calc(186px + env(safe-area-inset-bottom))}
-body.land #prac{left:calc(8px + env(safe-area-inset-left));right:auto;transform:none;top:var(--pracy,104px);bottom:auto;flex-direction:column;gap:0;align-items:flex-start;padding:4px 8px;font-size:11px;line-height:1.35}
+#prac{position:fixed;left:calc(8px + env(safe-area-inset-left));top:var(--pracy,104px);z-index:6;width:max(var(--pracw,220px),200px);box-sizing:border-box;background:rgba(10,8,30,.8);border:1px solid rgba(255,107,213,.75);border-radius:12px;padding:5px 9px 6px;pointer-events:auto;line-height:1.25}
+#prac .pr1{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+#prac .pr1 b{color:#ff8be0;font-size:12px}
+#prac .rate{font-size:16px;font-weight:800;color:#fff;white-space:nowrap}#prac .rate i{font-style:normal;font-size:24px;color:#ffe14d;margin-left:2px}
+#prac .pr2{font-size:10.5px;opacity:.85;white-space:nowrap}
+#prac .prd{display:flex;gap:4px;margin-top:4px}#prac .prd button{flex:1;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.08);color:#fff;border-radius:8px;font-size:11px;padding:3px 0;touch-action:manipulation}
+#prac .prd button.sel{background:linear-gradient(135deg,#ff6bd5,#b41ea0);border-color:#ffb3ec;font-weight:800}
 h2.h2prac{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .b5{border:0;border-radius:14px;padding:5px 12px;font-size:12px;font-weight:800;color:#fff;background:linear-gradient(135deg,#ff6bd5,#b41ea0);box-shadow:0 2px 0 rgba(0,0,0,.35);cursor:pointer;white-space:nowrap}
+/* ===== v9: smash timing cue on the button ===== */
+#tbSmash{overflow:visible}
+#nowCue{position:absolute;top:-14px;left:50%;transform:translateX(-50%);font-style:normal;font-weight:900;font-size:13px;color:#fff;background:#e0249f;border-radius:10px;padding:1px 7px;white-space:nowrap;box-shadow:0 0 10px rgba(255,80,210,.9);pointer-events:none}
+#tbSmash.now{animation:nowPulse .32s ease-in-out infinite alternate;border-color:#ff8be0!important;box-shadow:0 0 0 4px rgba(255,107,213,.65),0 0 22px rgba(255,80,210,.95)!important;opacity:1}
+@keyframes nowPulse{from{transform:scale(1)}to{transform:scale(1.08)}}
+body.land #prac{width:150px;padding:4px 7px 5px}body.land #prac .pr1{flex-wrap:wrap;gap:0 6px}body.land #prac .rate{font-size:13px}body.land #prac .rate i{font-size:21px}
+body.land #prac .pr2{white-space:normal;font-size:10px}body.land #prac .prd button{font-size:10.5px;padding:2px 0}
+#prac .pr2 span{white-space:nowrap;display:inline-block}

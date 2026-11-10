@@ -218,7 +218,8 @@ function drawPlayer(c, p, me) {
   // shadow + "me" ring
   c.fillStyle = 'rgba(0,0,0,.28)'; c.beginPath(); c.ellipse(x, y, Math.max(0, s * 0.36), Math.max(0, s * 0.12), 0, 0, 7); c.fill();
   c.strokeStyle = tcol; c.globalAlpha = 0.95; c.lineWidth = Math.max(2.5, s * 0.06); c.stroke(); c.globalAlpha = 1;
-  if (me) { c.strokeStyle = '#ffe14d'; c.lineWidth = Math.max(2, s * 0.04); c.beginPath(); c.ellipse(x, y, Math.max(0, s * 0.5), Math.max(0, s * 0.17), 0, 0, 7); c.stroke(); }
+  if (me) { const hot = AID.now, pu = hot ? 0.5 + 0.5 * Math.sin(performance.now() / 55) : 0; c.strokeStyle = hot ? `rgba(255,${80 + 120 * pu | 0},220,1)` : '#ffe14d'; c.lineWidth = Math.max(2, s * (hot ? 0.07 : 0.04)); c.beginPath(); c.ellipse(x, y, Math.max(0, s * (hot ? 0.56 + 0.06 * pu : 0.5)), Math.max(0, s * (hot ? 0.19 + 0.02 * pu : 0.17)), 0, 0, 7); c.stroke(); // v9: the ring pulses magenta at the smash moment
+    if (hot && m && m.practice) { c.font = `900 ${Math.max(14, s * 0.3) | 0}px system-ui,sans-serif`; const lf = x > W / 2, tx = x + (lf ? -1 : 1) * s * 0.62, ty = y - s * 0.75; c.textAlign = lf ? 'right' : 'left'; c.lineWidth = 4; c.strokeStyle = 'rgba(80,0,60,.9)'; c.strokeText('現在！', tx, ty); c.fillStyle = '#ff8be0'; c.fillText('現在！', tx, ty); } } // beside the player, clear of the name tag above
   const k = (s * 1.72 * KZ * PM_) / BODY; // sprite px -> screen px (arcade scale-up on phones)
   const sw = p.swing || 0, shot = p.swingShot, t = 1 - sw, ph = sw > 0 ? Math.sin(Math.PI * t) : 0;
   const idle = spd < 0.5 && sw <= 0, bob = idle ? Math.sin(now * 7 + p.i) * 0.015 : 0;
@@ -315,6 +316,9 @@ function render(dt) {
       ctx.strokeStyle = `rgba(255,225,77,${0.85 * pu})`; ctx.lineWidth = Math.max(2, s * 0.05); ctx.beginPath(); ctx.ellipse(q[0], q[1], Math.max(0, s * 0.42), Math.max(0, s * 0.42 * SN * 0.62), 0, 0, 7); ctx.stroke();
       ctx.fillStyle = 'rgba(255,225,77,.18)'; ctx.fill(); }
   } else hintPt = null;
+  if (AID.spot) { const q = proj(AID.spot.x, AID.spot.y, 0), s = q[2], pu = 0.6 + 0.4 * Math.sin(performance.now() / 120); // 殺球練習: where to stand for the smash
+    ctx.strokeStyle = `rgba(255,107,213,${0.9 * pu})`; ctx.setLineDash([6, 5]); ctx.lineWidth = Math.max(2, s * 0.045); ctx.beginPath(); ctx.ellipse(q[0], q[1], Math.max(0, s * 0.45), Math.max(0, s * 0.45 * SN * 0.62), 0, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = '#ff8be0'; ctx.font = `800 ${Math.max(11, s * 0.17) | 0}px system-ui,sans-serif`; ctx.textAlign = 'center'; ctx.fillText('殺球點', q[0], q[1] + Math.max(14, s * 0.22)); }
   drawShadow(ctx, bv);
   const objs = m.players.map((p) => ({ k: 'p', p, x: (p.rp || p).x, y: (p.rp || p).y }));
   objs.push({ k: 'b', x: bv.x, y: bv.y });
@@ -346,6 +350,25 @@ function noise(d, vol, fc, delay) {
   const s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain(); s.buffer = noiseBuf; f.type = 'bandpass'; f.frequency.value = fc; f.Q.value = 1.2;
   g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d); s.connect(f).connect(g).connect(AC.destination); s.start(t); s.stop(t + d + 0.02);
 }
+// v9 smash sound: rendered once into a buffer and played through a pool of 8 voices; when all are busy the oldest is
+// cut short so every smash still starts its own sound (counted in juice.sfx; juice.sfxMuted when sound is off / no audio).
+let smashBuf = null, smashBufP = null; const VOICES = [];
+function renderSmash() {
+  if (smashBufP || !AC) return; const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext; if (!OAC) return;
+  const sr = AC.sampleRate, o = new OAC(1, Math.ceil(sr * 0.42), sr), T = (f, d, type, vol, f2, delay) => { const t = delay || 0, os = o.createOscillator(), g = o.createGain(); os.type = type; os.frequency.setValueAtTime(f, t); if (f2) os.frequency.exponentialRampToValueAtTime(f2, t + d); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, t + d); os.connect(g).connect(o.destination); os.start(t); os.stop(t + d + 0.02); };
+  const N = (d, vol, fc, delay) => { const t = delay || 0, nb = o.createBuffer(1, Math.ceil(sr * d), sr), a = nb.getChannelData(0); for (let i = 0; i < a.length; i++) a[i] = Math.random() * 2 - 1; const sN = o.createBufferSource(), f = o.createBiquadFilter(), g = o.createGain(); sN.buffer = nb; f.type = 'bandpass'; f.frequency.value = fc; f.Q.value = 1.2; g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d); sN.connect(f).connect(g).connect(o.destination); sN.start(t); };
+  N(0.09, 0.75, 3400); T(1800, 0.05, 'square', 0.16, 320); T(120, 0.24, 'sine', 0.6, 42); N(0.28, 0.28, 800, 0.03);
+  smashBufP = o.startRendering().then((b) => { smashBuf = b; }).catch(() => {});
+}
+function smashVoice() {
+  if (!AC || !sound) { juice.sfxMuted = (juice.sfxMuted || 0) + 1; juice.sfx++; return; }
+  renderSmash();
+  if (!smashBuf) { juice.sfx++; noise(0.09, 0.75, 3400); tone(1800, 0.05, 'square', 0.16, 320); tone(120, 0.24, 'sine', 0.6, 42); noise(0.28, 0.28, 800, 0.03); return; } // first one, while the buffer renders
+  const t = AC.currentTime; let v = VOICES.find((q) => q.end <= t);
+  if (!v) { if (VOICES.length < 8) { const g = AC.createGain(); g.connect(AC.destination); v = { g, src: null, end: 0 }; VOICES.push(v); } else { v = VOICES.reduce((a, b) => (a.end < b.end ? a : b)); try { v.src.stop(); } catch (_) {} juice.sfxStolen = (juice.sfxStolen || 0) + 1; } }
+  const src = AC.createBufferSource(); src.buffer = smashBuf; src.connect(v.g); v.g.gain.setValueAtTime(1, t); src.onended = () => { juice.sfxEnded = (juice.sfxEnded || 0) + 1; };
+  src.start(t); v.src = src; v.end = t + smashBuf.duration; juice.sfx++; juice.voices = VOICES.length;
+}
 const SFX = {
   hit: (shot) => { const v = shot === 'dink' ? 0.25 : shot === 'smash' ? 0.6 : 0.45; tone(shot === 'dink' ? 1250 : 950, 0.07, 'triangle', v, 500); noise(0.05, v * 0.8, 2200); },
   bounce: () => { tone(260, 0.08, 'sine', 0.3, 120); noise(0.04, 0.15, 700); },
@@ -355,7 +378,7 @@ const SFX = {
   side: () => { tone(520, 0.14, 'triangle', 0.22); tone(390, 0.22, 'triangle', 0.22, null, 0.12); },
   win: () => { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.3, 'triangle', 0.25, null, i * 0.13)); },
   click: () => tone(700, 0.05, 'sine', 0.15),
-  smash: () => { juice.sfx++; noise(0.09, 0.75, 3400); tone(1800, 0.05, 'square', 0.16, 320); tone(120, 0.24, 'sine', 0.6, 42); noise(0.28, 0.28, 800, 0.03); } // v7: crack + low boom + whoosh
+  smash: () => smashVoice()
 };
 $('bSound').onclick = () => { sound = !sound; try { localStorage.pbSound = sound ? '1' : '0'; } catch (_) {} $('bSound').textContent = sound ? '🔊' : '🔇'; audio(); };
 $('bSound').textContent = sound ? '🔊' : '🔇';
@@ -421,21 +444,32 @@ function contactZ(me) {
   }
   return null; // not hittable by me: don't judge
 }
-const SL = { want: false, since: 0, key: '', used: false, toggles: 0, shots: 0, short: 0, lastT: 0, log: [] };
+// v9: the latch is keyed on a monotonic count of incoming strokes (from the hit events, so it can't be fooled by a reset
+// point / rally counter, a rematch or my partner's hits), a new state must hold 0.35 s, and any two changes are ≥ 1.2 s apart.
+const SL = { want: false, since: 0, seq: 0, key: -1, used: false, toggles: 0, shots: 0, short: 0, lastT: -1e9, log: [] };
+const SL_DWELL = 1200;
 function setSmashLow(low, now) {
-  if (low === smashLowNow) return; smashLowNow = low; SL.toggles++; if (now - SL.lastT < 300) SL.short++; SL.lastT = now; SL.log.push([Math.round(now), low ? 1 : 0]); if (SL.log.length > 200) SL.log.shift();
+  if (low === smashLowNow) return; smashLowNow = low; SL.toggles++; if (now - SL.lastT < 300) SL.short++; SL.lastT = now; SL.log.push([Math.round(now), low ? 1 : 0, SL.seq]); if (SL.log.length > 200) SL.log.shift();
   const bt = $('tbSmash'); bt.classList.toggle('low', low); bt.querySelector('b').textContent = low ? '抽' : '殺球'; bt.querySelector('small').textContent = low ? '▼' : 'SMASH';
 }
+function slIncoming(e) { const me = m && m.players[mySeat]; if (me && e.p != null && m.players[e.p] && m.players[e.p].team !== me.team) SL.seq++; } // an opponent stroke = a new incoming shot
 function updSmashBtn() {
-  const now = performance.now(), me = m && state === 'play' && role !== 'spectator' ? m.players[mySeat] : null;
-  if (!me) { SL.key = ''; if (smashLowNow) setSmashLow(false, now); return; }
-  if (m.phase === 'serve') { SL.key = ''; return; } // between points: hold (the next incoming shot decides)
-  const key = m.point + ':' + m.hits; const z = contactZ(me);
-  if (z == null) return;                                         // nothing for me to hit: hold
-  if (key !== SL.key) { SL.key = key; SL.used = false; SL.shots++; SL.want = smashLowNow; SL.since = now; }
-  const low = z < PB.SMASH_Z;
+  const now = performance.now(), me = m && (state === 'play' || state === 'end') && role !== 'spectator' ? m.players[mySeat] : null;
+  if (!me || m.phase !== 'rally' || !m.live || m.lastHitTeam === me.team) return; // only judge a live ball coming my way; otherwise hold
+  const z = contactZ(me); if (z == null) return;                                  // not hittable by me: hold
+  if (SL.seq !== SL.key) { SL.key = SL.seq; SL.used = false; SL.shots++; SL.want = smashLowNow; SL.since = now; }
+  const low = z < PB.SMASH_ZH;
   if (low !== SL.want) { SL.want = low; SL.since = now; }
-  if (!SL.used && SL.want !== smashLowNow && now - SL.since >= 350) { setSmashLow(SL.want, now); SL.used = true; }
+  if (!SL.used && SL.want !== smashLowNow && now - SL.since >= 350 && now - SL.lastT >= SL_DWELL) { setSmashLow(SL.want, now); SL.used = true; }
+}
+function slReset() { SL.key = -1; SL.used = false; } // new match: keep the label as is (no change outside an incoming shot); the next incoming ball judges it
+// v9 timing aid: 「現在！」 when the ball will meet me high enough within 0.45 s (or is in my smash window right now)
+const AID = { now: false, onT: 0, cues: 0, spot: null, contact: null };
+function updAid() {
+  const me = m && state === 'play' && role !== 'spectator' ? m.players[mySeat] : null, a = me ? PB.smashAid(m, me) : null;
+  AID.spot = a && m.practice ? a.spot : null; AID.contact = a && a.contact;
+  const now = !!(a && a.contact && a.contact.ok && a.contact.t <= 0.45);
+  if (now !== AID.now) { AID.now = now; if (now) { AID.onT = performance.now(); AID.cues++; if (FREEZE.aidArm) { FREEZE.aidArm = false; FREEZE.frozen = true; } } const bt = $('tbSmash'); bt.classList.toggle('now', now); $('nowCue').classList.toggle('hide', !now); }
 }
 function smashCard(e) {
   const c = $('smashCard'), p = m.players[e.p]; if (!c) return;
@@ -443,18 +477,31 @@ function smashCard(e) {
   $('smashSub').textContent = (p ? p.name + (e.p === mySeat ? '（你）' : '') + ' ' : '') + (e.how === 'win' ? '殺球致勝！' : '殺球逼出失誤！');
   c.className = mine ? 'own' : 'opp'; void c.offsetWidth; c.classList.add('go'); clearTimeout(smashCard.t); smashCard.t = setTimeout(() => c.classList.remove('go'), 1400); smashCard.n = (smashCard.n || 0) + 1;
 }
+// v9 practice panel: one big 「致勝率 xx%」 line, small details, and a difficulty switch right in the panel
 function updPrac() {
   const el = $('prac'); if (!el) return; const on = !!(m && m.practice && state === 'play'); el.classList.toggle('hide', !on); if (!on) return;
   const s = m.smStats[teamOf(mySeat)];
-  if (!PORT) { const bd = $('board'); if (bd) { const r = appRect(bd); if (r.height) el.style.setProperty('--pracy', Math.round(r.bottom + 6) + 'px'); } }
-  el.innerHTML = `<b>殺球練習</b><span>殺球 <i>${s.n}</i></span><span>致勝 <i>${s.win}</i></span><span>逼失誤 <i>${s.forced}</i></span><span>被回擊 <i>${s.ret}</i></span><span>失誤 <i>${s.own}</i></span>`;
+  { const bd = $('board'); if (bd) { const r = appRect(bd); if (r.height) { el.style.setProperty('--pracy', Math.round(r.bottom + 6) + 'px'); el.style.setProperty('--pracw', Math.round(r.width) + 'px'); } } }
+  if (!el.firstChild) {
+    el.innerHTML = '<div class="pr1"><b>殺球練習</b><span class="rate">致勝率 <i id="prRate">—</i></span></div><div class="pr2" id="prDet"></div><div class="prd" id="prDiff"><button data-d="easy">簡單</button><button data-d="normal">普通</button><button data-d="hard">困難</button></div>';
+    $('prDiff').addEventListener('pointerdown', (e) => { const b = e.target.closest('button'); if (!b) return; e.preventDefault(); e.stopPropagation(); setPracDiff(b.dataset.d); });
+    $('prDiff').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b && e.detail === 0) setPracDiff(b.dataset.d); }); // keyboard
+  }
+  $('prRate').textContent = s.n ? Math.round(100 * (s.win + s.forced) / s.n) + '%' : '—';
+  $('prDet').innerHTML = `<span>殺球 ${s.n}・致勝 ${s.win}・逼失誤 ${s.forced}</span><span>・被回擊 ${s.ret}・失誤 ${s.own}</span>`;
+  el.querySelectorAll('#prDiff button').forEach((b) => b.classList.toggle('sel', b.dataset.d === m.diff));
+}
+function pracDiffDefault() { const q = QS.get('diff'); if (PB.DIFF[q]) return q; try { if (PB.DIFF[localStorage.pbPracDiff]) return localStorage.pbPracDiff; } catch (_) {} return 'easy'; }
+function setPracDiff(d) {
+  if (!m || !m.practice || !PB.DIFF[d]) return; SFX.click(); try { localStorage.pbPracDiff = d; } catch (_) {}
+  m.diff = d; m.cfg.diff = d; m.smStats = [0, 1].map(() => ({ n: 0, win: 0, forced: 0, own: 0, ret: 0 })); m.smTrack = null; hudSig = ''; updPrac(); // fresh stats for the new level
 }
 function lowTip() { lowTipT = performance.now() + 1300; }
 function handleEvent(e) {
   if (!m) return;
   switch (e.k) {
-    case 'hit': hitCount[e.p] = (hitCount[e.p] || 0) + 1; if (e.shot === 'smash') smashJuice(e.ds); else SFX.hit(e.shot); if (e.low && e.p === mySeat) lowTip(); if (e.p != null && m.players[e.p]) { m.players[e.p].swing = 1; m.players[e.p].swingShot = e.shot; } break;
-    case 'serve': SFX.hit('drive'); if (m.players[e.p]) { m.players[e.p].swing = 1; m.players[e.p].swingShot = 'serve'; } break;
+    case 'hit': slIncoming(e); hitCount[e.p] = (hitCount[e.p] || 0) + 1; if (e.shot === 'smash') smashJuice(e.ds); else SFX.hit(e.shot); if (e.low && e.p === mySeat) lowTip(); if (e.p != null && m.players[e.p]) { m.players[e.p].swing = 1; m.players[e.p].swingShot = e.shot; } break;
+    case 'serve': slIncoming(e); SFX.hit('drive'); if (m.players[e.p]) { m.players[e.p].swing = 1; m.players[e.p].swingShot = 'serve'; } break;
     case 'bounce': if (!e.dead) SFX.bounce(); fx.push({ k: 'ring', x: e.x, y: e.y, t: 0, d: 0.9, out: PB.isOut(e.x, e.y) && !e.dead }); for (let n = 0; n < 9; n++) { const a = Math.random() * 7, sp = 0.6 + Math.random() * 1.2; fx.push({ k: 'puff', x: e.x, y: e.y, z: 0.03, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vz: 0.8 + Math.random() * 1.4, t: 0, d: 0.45 + Math.random() * 0.25 }); } break;
     case 'net': SFX.net(); break;
     case 'fault': SFX.whistle(); lastFault = e; break;
@@ -494,7 +541,7 @@ function updHUD() {
     const sp = m.players[m.server];
     const sw = m.servingTeam === lt && role !== 'spectator' ? '你方' : m.teamNames[m.servingTeam];
     $('srv').textContent = m.practice ? '電腦一直餵高球' : m.mode === 2 ? `報分 ${PB.callText(m)}・${sw}發球 ${sp ? sp.name : ''}` : `${sw}發球・${sp ? sp.name : ''}`;
-    requestAnimationFrame(measureHud);
+    measureHud(); requestAnimationFrame(measureHud); // v9: measure now too, so tags drawn this frame already avoid a resized scoreboard
     if (m.practice) requestAnimationFrame(updPrac);
   }
   // rule tips
@@ -524,7 +571,7 @@ addEventListener('keydown', (e) => {
 addEventListener('keyup', (e) => { keys[e.code] = false; });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
 function press(shot) {
-  if (shot === 'smash' && smashLowNow) lowTip();
+  if (shot === 'smash' && AID.contact && !AID.contact.ok && AID.contact.t < 0.6) lowTip(); // v9: only for the ball actually arriving now (not a stale button state)
   inp.shot = shot; inp.shotT = performance.now(); inp.seq++;
   document.querySelectorAll('.tb').forEach((b) => b.classList.toggle('sel', b.dataset.shot === shot));
   if (role === 'client') sendInput(true);
@@ -555,7 +602,7 @@ function readMove() {
   return PORT ? { mx: R * y, my: -R * x } : { mx: R * x, my: R * y }; // screen -> world (inverse of toView)
 }
 // autopilot (testing / demo): steer toward the predicted hitting spot
-let apPred = null, apKey = '', apServeT = 0, apLazy = false;
+let apPred = null, apKey = '', apServeT = 0, apLazy = false, apSpot = false;
 function autopilot(p) {
   const b = m.ball, xs = PB.teamSign(p.team);
   const mate0 = m.players.find((q) => q.team === p.team && q !== p);
@@ -565,10 +612,11 @@ function autopilot(p) {
   else if (m.live && m.lastHitTeam !== p.team) {
     const key = m.rally + ':' + m.bounces; if (key !== apKey || !apPred) { if (!apKey.startsWith(m.rally + ':')) apLazy = Math.random() < 0.05; apKey = key; apPred = PB.predict(m); }
     if (apLazy && !m.practice) return { mx: 0, my: 0 }; // autopilot occasionally misses so points get decided
-    if (m.practice && !smashLowNow && contactZ(p) != null && contactZ(p) >= PB.SMASH_Z && Math.hypot(b.x - p.x, b.y - p.y) < 2.2) press('smash'); // practice: smash when the button says 殺球
+    if (m.practice && AID.now) press('smash'); // practice: smash on the 「現在！」 cue
+    if (m.practice && AID.spot) { tx = AID.spot.x; ty = AID.spot.y; apSpot = true; } else apSpot = false;
     let mate = m.players.find((q) => q.team === p.team && q !== p);
-    const fb = apPred.firstBounce; if (fb && (fb.x < 0 ? 0 : 1) === p.team) { tx = fb.x + xs * 0.6; ty = fb.y; } // at least chase the landing spot
-    for (const q of apPred) {
+    const fb = apPred.firstBounce; if (!apSpot && fb && (fb.x < 0 ? 0 : 1) === p.team) { tx = fb.x + xs * 0.6; ty = fb.y; } // at least chase the landing spot
+    if (!apSpot) for (const q of apPred) {
       if ((q.x < 0 ? 0 : 1) !== p.team || q.b >= 2) continue;
       if (!(q.b >= 1 ? q.z > 0.15 && q.z < 1.3 : m.hits >= 3 && Math.abs(q.x) > C.K + 0.4 && q.z > 0.3 && q.z < 1.6)) continue;
       if (mate && m.mode === 2 && (m.hits === 1 ? m.receiver !== p.i : Math.hypot(q.x - mate.x, q.y - mate.y) < Math.hypot(q.x - p.x, q.y - p.y) - 0.3)) break;
@@ -603,10 +651,10 @@ function startLocal(mode) {
 }
 function startPractice() {
   role = 'local'; mySeat = 0; R = 1;
-  const seats = seatsLocal(1); beginMatch({ mode: 1, diff: opt.diff, target: 999, seats, teamNames: teamNamesOf(seats), firstServe: 1, practice: 'smash' }); updPrac();
+  const seats = seatsLocal(1); beginMatch({ mode: 1, diff: pracDiffDefault(), target: 999, seats, teamNames: teamNamesOf(seats), firstServe: 1, practice: 'smash' }); updPrac();
 }
 function beginMatch(cfg) {
-  m = PB.createMatch(cfg); hudSig = ''; setTimeout(updPrac, 0); fx.length = 0; trail.length = 0; paused = false;
+  m = PB.createMatch(cfg); hudSig = ''; slReset(); setTimeout(updPrac, 0); fx.length = 0; trail.length = 0; paused = false;
   for (const p of m.players) { p.rp = { x: p.x, y: p.y }; }
   state = 'play';
   ['menu', 'room', 'end', 'pause', 'rules'].forEach((i) => $(i).classList.add('hide'));
@@ -910,7 +958,7 @@ function frameBody(now) {
       for (const p of m.players) { if (p.ctrl === 'remote') { p.rp = p.rp ? { x: p.rp.x + (p.x - p.rp.x) * k, y: p.rp.y + (p.y - p.rp.y) * k } : { x: p.x, y: p.y }; } else p.rp = null; }
       const evs = m.events.splice(0); evs.forEach(handleEvent); if (role === 'host') { outbox.push(...evs); hostTick(dt); }
     } else clientTick(dt);
-    updSmashBtn(); updHUD(); placeMsg(false); placeTip(); dimOverBall();
+    updSmashBtn(); updAid(); updHUD(); placeMsg(false); placeTip(); dimOverBall();
   }
   try { render(dt); } catch (err) { layer = null; if (!frame.warned) { frame.warned = 1; console.warn('render recovered', err && err.message); } }
   if (FREEZE.left >= 0) { if (FREEZE.left === 0) { FREEZE.frozen = true; FREEZE.shot = { ox: juice.ox, oy: juice.oy, flash: juice.flash, shake: juice.shake, amp: juice.amp }; } FREEZE.left--; }
@@ -919,6 +967,6 @@ resize();
 function loop(now) { frame(now); requestAnimationFrame(loop); }
 requestAnimationFrame(loop);
 // test hooks
-window.__pb = { looks: () => ({ room, prefs, rs: roomSeats() }), get m() { return m; }, proj, get view() { return { W, H, F, touchUI, port: PORT, pan: PAN, safe: safeRect(), ballR: lastBallR, tags: lastTags, hud: hudBlock, fpsY }; }, showMsg, get state() { return state; }, get role() { return role; }, get room() { return roomCode; }, get roster() { return roster; }, get net() { return net; }, get fps() { return fps; }, get seat() { return mySeat; }, get forced() { return FORCED; }, appRect, appXY, get orient() { return opt.orient; }, hitCount, startLocal, press, juice, get smashLow() { return smashLowNow; }, contactZ: () => contactZ(m && m.players[mySeat]), get lowTipT() { return lowTipT; }, SL, startPractice, freezeJuice: (k) => { FREEZE.armed = true; FREEZE.at = k | 0; FREEZE.left = -1; FREEZE.frozen = false; }, unfreeze: () => { FREEZE.frozen = false; FREEZE.left = -1; FREEZE.armed = false; }, get freeze() { return FREEZE; }, get cards() { return smashCard.n || 0; } };
+window.__pb = { looks: () => ({ room, prefs, rs: roomSeats() }), get m() { return m; }, proj, get view() { return { W, H, F, touchUI, port: PORT, pan: PAN, safe: safeRect(), ballR: lastBallR, tags: lastTags, hud: hudBlock, fpsY }; }, showMsg, get state() { return state; }, get role() { return role; }, get room() { return roomCode; }, get roster() { return roster; }, get net() { return net; }, get fps() { return fps; }, get seat() { return mySeat; }, get forced() { return FORCED; }, appRect, appXY, get orient() { return opt.orient; }, hitCount, startLocal, press, juice, get smashLow() { return smashLowNow; }, contactZ: () => contactZ(m && m.players[mySeat]), get lowTipT() { return lowTipT; }, SL, AID, startPractice, setPracDiff, fireSmash: (k) => { for (let i = 0; i < k; i++) smashJuice(1); }, freezeJuice: (k) => { FREEZE.armed = true; FREEZE.at = k | 0; FREEZE.left = -1; FREEZE.frozen = false; }, unfreeze: () => { FREEZE.frozen = false; FREEZE.left = -1; FREEZE.armed = false; FREEZE.aidArm = false; }, hold: () => { FREEZE.frozen = true; }, freezeAid: () => { FREEZE.aidArm = true; }, get freezeOn() { return FREEZE.frozen; }, get freeze() { return FREEZE; }, get cards() { return smashCard.n || 0; } };
 if (QS.get('demo') === 'smash') startPractice(); // ?demo=smash opens 殺球練習 directly
 })();

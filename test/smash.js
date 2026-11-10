@@ -39,10 +39,10 @@ ok(r('1easy') > r('1normal') && r('1normal') > r('1hard') && r('2easy') > r('2ha
 ok(P['1easy'].winner / P['1easy'].n >= 0.15, `easy CPU is beaten outright by ${(100 * P['1easy'].winner / P['1easy'].n).toFixed(0)}% of smashes (v6: ~5%)`);
 // low ball: 殺球 below 0.9 m vs a plain 抽球 at the same height
 { const L = { n: 0, f: 0 }, D = { n: 0, f: 0 };
-  for (let s = 1; s <= N; s++) { const z = 0.3 + (s % 6) / 10;
+  for (let s = 1; s <= N; s++) { const z = 0.3 + (s % 5) / 10; // below the 0.8 m player bar (v9)
     const a = trial('normal', s, z, 'smash'); if (a.kind) { L.n++; if (a.res === 'own error') L.f++; }
     const b = trial('normal', s, z, 'drive'); if (b.kind) { D.n++; if (b.res === 'own error') D.f++; } }
-  console.log(`low ball (z 0.3–0.8 m): 殺球 → power drive own-error (net/out) ${pct(L.f, L.n)} vs plain 抽球 ${pct(D.f, D.n)}`);
+  console.log(`low ball (z 0.3–0.7 m): 殺球 → power drive own-error (net/out) ${pct(L.f, L.n)} vs plain 抽球 ${pct(D.f, D.n)}`);
   ok(L.f / L.n >= 0.33 && L.f / L.n >= 2.5 * D.f / D.n, `low-ball 殺球 is clearly riskier (${pct(L.f, L.n)} vs ${pct(D.f, D.n)})`); }
 // CPU actively smashes high balls, more on harder levels; full AI-vs-AI matches
 { const fr = {};

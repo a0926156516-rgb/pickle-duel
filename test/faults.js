@@ -27,7 +27,7 @@ let fails = 0; const ok = (c, t) => { console.log((c ? 'PASS ' : 'FAIL ') + t); 
         b.x = sv.x; b.z = sv.z; b.vx = sv.vx; b.vz = sv.vz; b.vy = 0; b.y = sv.y != null ? sv.y : -ys * 1.4 * (sv.side || 1); }, cs.serve);
     } else {
       await p.evaluate(`(() => { const m = __pb.m, s = __pb.seat; ${cs.setup} })()`);
-      await p.tap('#tbDrive'); if (cs.after) await p.evaluate(`(() => { const m = __pb.m, s = __pb.seat; ${cs.after} })()`);
+      await p.tap('#tbDrive'); if (cs.after) await p.waitForFunction(() => __pb.m.hits > 3, null, { timeout: 1500, polling: 'raf' }).catch(() => {}); if (cs.after) await p.evaluate(`(() => { const m = __pb.m, s = __pb.seat; ${cs.after} })()`);
     }
     let seen = '', shot = false;
     for (let i = 0; i < 30 && !shot; i++) { const t = await p.evaluate(() => { const e = document.getElementById('msg'); return e.classList.contains('hide') ? '' : document.getElementById('msgA').textContent + ' / ' + document.getElementById('msgB').textContent; });

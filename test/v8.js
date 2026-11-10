@@ -10,7 +10,7 @@ const pct = (a, b) => (b ? (100 * a / b).toFixed(0) + '%' : '—');
 (async () => {
   const b = await chromium.launch(); const errs = [];
   const mk = async (w, h, q, tag, diff) => { const ctx = await b.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }); const p = await ctx.newPage(); p.on('pageerror', (e) => errs.push(`[${tag}] ${e.message}`));
-    if (diff) await p.addInitScript((d) => { localStorage.pbOpt = JSON.stringify({ diff: d }); }, diff);
+    if (diff) await p.addInitScript((d) => { localStorage.pbOpt = JSON.stringify({ diff: d }); localStorage.pbPracDiff = d; }, diff); // v9: practice keeps its own level
     const cdp = await ctx.newCDPSession(p); const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], i) => ({ x, y, id: i + 1, radiusX: 4, radiusY: 4, force: 1 })) });
     const tapEl = async (sel) => { const bb = await p.locator(sel).boundingBox(); await touch('touchStart', [[bb.x + bb.width / 2, bb.y + bb.height / 2]]); await p.waitForTimeout(40); await touch('touchEnd', []); await p.waitForTimeout(80); };
     await p.goto(BASE + q); return { p, tapEl }; };

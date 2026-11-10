@@ -46,8 +46,10 @@ const R = (r) => ({ l: r.left, t: r.top, r: r.right, b: r.bottom });
     { const h = await p.evaluate(() => document.getElementById('hdr').innerText); ok(/^單打・普通・11分$/.test(h), `HUD header shows mode/difficulty/target 「${h}」`); } await p.context().close(); }
   // --- fault attribution (local 1v1): CPU serve into the net vs my serve into the net
   for (const mine of [false, true]) {
-    const p = await open(390, 844, '?'); await p.tap('#bS1'); await p.waitForFunction(() => __pb.state === 'play');
-    await p.waitForFunction((mine) => __pb.m.phase === 'serve' && (__pb.m.server === __pb.seat) === mine, mine, { timeout: 60000, polling: 50 }).catch(() => {});
+    // the first server is a coin flip and an idle player rarely wins a side-out, so start new matches until the wanted side serves first
+    let p = null; for (let k = 0; k < 10; k++) { p = await open(390, 844, '?'); await p.tap('#bS1'); await p.waitForFunction(() => __pb.state === 'play');
+      if (await p.waitForFunction((mine) => __pb.m.phase === 'serve' && (__pb.m.server === __pb.seat) === mine, mine, { timeout: 2500, polling: 50 }).then(() => true).catch(() => false)) break;
+      await p.context().close(); }
     if (mine) await p.evaluate(() => __pb.press('drive'));
     await p.waitForFunction(() => __pb.m.phase === 'rally', null, { timeout: 20000, polling: 10 });
     const who = await p.evaluate(() => { const b = __pb.m.ball; b.vz = -1; b.vx *= 0.6; return __pb.m.players[__pb.m.lastHitter].name; }); // straight into the net

@@ -19,7 +19,7 @@ const DIFF = {
 // v7 smash balance: smash = chance to actively 殺球 a high ball; sm = how a CPU copes with a well-placed smash coming at it
 // (miss: can't get the racket on it, err: mis-hits it into the net / out, weak: pops up a short, high ball). Scaled by the smash's quality.
 const HUMAN = { sig: 0.2, err: 0.012 };
-const SMASH_Z = 0.9, SM_LUNGE = +(typeof process !== 'undefined' && process.env && process.env.LUNGE) || 1.6; // 殺球 needs the ball at shoulder height or above
+const SMASH_Z = 0.9, SMASH_ZH = 0.8, SMASH_WAIT = 0.25, SM_LUNGE = +(typeof process !== 'undefined' && process.env && process.env.LUNGE) || 1.6; // 殺球 needs the ball at shoulder height or above (v9: players get a slightly lower 0.8 m bar and a 0.25 s smash window)
 const HUMAN_REACH = { easy: 1.45, normal: 1.3, hard: 1.08 }; // auto-swing radius multiplier for human players (beginner friendly)
 const teamSign = (t) => (t === 0 ? -1 : 1);
 const sideSign = (t, s) => (t === 0 ? (s === 'R' ? -1 : 1) : (s === 'R' ? 1 : -1));
@@ -150,7 +150,8 @@ function makeShot(m, p, shot, aimY, aiTarget) {
   // so it becomes a flat power drive (20% faster than a drive) that is harder to control.
   // v7: a 殺球 on a ball below 0.9 m can't be hit down — it is a flat, overhit power drive with a big net / out risk
   let low = false;
-  if (shot === 'smash') { if (b.z >= SMASH_Z) { kind = 'smash'; sig *= 1.05; } else { kind = 'drive'; low = true; power = 1.3; sig *= 1.6; perr = Math.max(perr * 4, 0.3) + (SMASH_Z - b.z) * 0.35; } }
+  const zt = human ? SMASH_ZH : SMASH_Z;
+  if (shot === 'smash') { if (b.z >= zt) { kind = 'smash'; sig *= 1.05; } else { kind = 'drive'; low = true; power = 1.3; sig *= 1.6; perr = Math.max(perr * 4, 0.33) + (zt - b.z) * 0.45; } }
   p.lowSmash = low;
   // the receiving CPU's fate against this shot (set by an earlier deliberate smash): err = mis-hit, weak = short pop-up
   const fate = m.smFate && m.smFate.rally === m.rally && m.smFate.team === p.team && !human ? m.smFate.f : null;
@@ -187,7 +188,7 @@ function makeShot(m, p, shot, aimY, aiTarget) {
   m.smFate = null;
   if (kind === 'smash' && shot === 'smash') { // decide how the CPU on the other side copes with this smash
     const opp = m.players.filter((q) => q.team === o), Dr = DIFF[m.diff].sm;
-    const hq = 0.6 + 0.4 * clamp((b.z - SMASH_Z) / 0.9, 0, 1);                       // the higher the contact, the steeper and harder
+    const hq = 0.6 + 0.4 * clamp((b.z - zt) / 0.9, 0, 1);                       // the higher the contact, the steeper and harder
     const away = Math.min(...opp.map((q) => Math.hypot(q.x - tx, q.y - ty)));       // placed away from the receiver(s)
     const q = hq * clamp(0.45 + away / 4, 0.5, 1) * (mis ? 0 : 1);
     const u = r(); let f = 'ok';
@@ -407,6 +408,23 @@ function practiceFeed(m) {
   const v = launch(from, tx, ty, 1.3 + r() * 0.3, 0.6); Object.assign(m.ball, from, v);
   fp.swing = 1; fp.swingShot = 'lob'; ev(m, { k: 'hit', p: fp.i, shot: 'lob', feed: 1 });
 }
+// v9 smash timing aid: where the incoming ball meets me from where I stand (contact), and the best place to step in for a smash (spot)
+function smashAid(m, p) {
+  if (!m.live || m.phase !== 'rally' || m.lastHitTeam === p.team) return null;
+  const human = p.ctrl !== 'ai', reach = C.REACH * (human ? (HUMAN_REACH[m.diff] || 1) : 1), zt = human ? SMASH_ZH : SMASH_Z;
+  const b = { ...m.ball }, dt = 1 / 60; let bo = m.bounces, contact = null, spot = null;
+  for (let t = dt; t < 3; t += dt) {
+    b.vz -= C.G * dt; b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt;
+    if (b.z <= C.R && b.vz < 0) { b.z = C.R; b.vz = -b.vz * C.BOUNCE; b.vx *= C.FRIC; b.vy *= C.FRIC; if (++bo >= 2) break; }
+    if ((b.x < 0 ? 0 : 1) !== p.team || b.z < 0.06 || b.z > 2.4 || (bo === 0 && m.hits < 3 && m.bounces === 0)) continue;
+    const d = Math.hypot(b.x - p.x, b.y - p.y), r = reach * (b.z > 1.7 ? 0.8 : 1);
+    if (!contact && Math.max(0, d - r) <= C.SPEED * t * 0.9) contact = { t, z: b.z, x: b.x, y: b.y, ok: b.z >= zt };
+    if (!spot && bo === m.bounces && m.hits >= 3 && Math.abs(b.x) > C.K + 0.45 && b.vz < 0 && b.z >= zt + 0.3 && b.z <= 1.7 && Math.max(0, d - r * 0.6) <= C.SPEED * t * 0.85)
+      spot = { t, x: b.x, y: b.y, z: b.z };
+    if (contact && spot) break;
+  }
+  return { contact, spot, zt };
+}
 function step(m, dt) {
   const n = Math.max(1, Math.round(dt / C.DT)); const h = dt / n;
   for (let i = 0; i < n; i++) sub(m, h);
@@ -463,7 +481,16 @@ function sub(m, dt) {
         const bad = illegal(m, p);
         const pressed = p.in.shotT > m.t - 0.35;
         if (bad && !pressed) continue; // auto-swing only for legal hits; a deliberate press commits the stroke
-        doHit(m, p, p.in.shotT > m.t - 0.7 ? p.in.shot : 'drive', p.in.aimOn ? p.in.aim : 0); break;
+        const queued = p.in.shotT > m.t - 0.7; // a press up to 0.7 s before contact is buffered and used at contact
+        // v9 smash window: a smashable ball with no press yet -> hold the auto-swing up to 0.25 s while it stays high and in reach,
+        // so a slightly late 殺球 press still smashes (never lets a ball escape: swings at once if the next instant would be too late)
+        if (!bad && !queued && b.z >= SMASH_ZH) {
+          if (p.waitK !== m.point + ':' + m.hits) { p.waitK = m.point + ':' + m.hits; p.waitT = m.t; }
+          const h = 0.05, fx = b.x + b.vx * h, fy = b.y + b.vy * h, fz = b.z + b.vz * h - 0.5 * C.G * h * h;
+          const rr = C.REACH * (fz > 1.7 ? 0.8 : 1) * (HUMAN_REACH[m.diff] || 1) * 0.92;
+          if (m.t - p.waitT < SMASH_WAIT && fz >= SMASH_ZH && fz <= 2.4 && Math.hypot(fx - p.x, fy - p.y) <= rr && (fx < 0 ? 0 : 1) === p.team) continue;
+        }
+        doHit(m, p, queued ? p.in.shot : 'drive', p.in.aimOn ? p.in.aim : 0); break;
       }
     }
     // safety: ball far away & slow
@@ -476,6 +503,6 @@ function sub(m, dt) {
   }
 }
 
-const API = { C, DIFF, SMASH_Z, HUMAN_REACH, TEAM_NAME, createMatch, step, setupPoint, callText, movePlayer, clampPlayer, teamSign, sideSign, netH, inKitchen, isOut, predict, formation };
+const API = { C, DIFF, SMASH_Z, SMASH_ZH, SMASH_WAIT, HUMAN_REACH, smashAid, TEAM_NAME, createMatch, step, setupPoint, callText, movePlayer, clampPlayer, teamSign, sideSign, netH, inKitchen, isOut, predict, formation };
 if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.PB = API;
 })(typeof self !== 'undefined' ? self : this);

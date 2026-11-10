@@ -282,3 +282,18 @@ body.land #prac .pr2{white-space:normal;font-size:11.5px}body.land #prac .prd bu
 #armCue{position:absolute;top:-15px;left:50%;transform:translateX(-50%);font-style:normal;font-weight:900;font-size:13px;color:#2a0020;background:#ffe14d;border-radius:10px;padding:1px 8px;white-space:nowrap;pointer-events:none}
 #tbSmash.armed{box-shadow:0 0 0 3px rgba(255,225,77,.8)!important}
 #pause .porient{justify-content:center;gap:10px;margin-top:6px}
+/* ===== v11: practice panel rows have fixed heights (no jump when 致勝率 appears); score hidden in practice ===== */
+#prac .pr1{flex-wrap:nowrap;white-space:nowrap;height:18px;align-items:center}
+#prac .rp{font-size:12px;font-weight:700;color:#fff;white-space:nowrap}#prac .rp i{font-style:normal;font-weight:900;color:#ffe14d;font-size:14px}
+#prac .prr{display:flex;align-items:baseline;gap:6px;height:30px;white-space:nowrap;overflow:hidden}
+#prac .prr .rate{font-size:15px;font-weight:800}#prac .prr .rate i{font-size:24px}
+#prac .incl{font-size:10.5px;color:#ffd0f2;opacity:.9;white-space:nowrap}
+#prac .pr2{min-height:17px}
+body.land #prac .pr1{flex-wrap:nowrap;height:16px}body.land #prac .pr1 b{font-size:11px}body.land #prac .rp{font-size:11px}body.land #prac .rp i{font-size:12px}
+body.land #prac .prr{height:26px;gap:4px}body.land #prac .prr .rate{font-size:12px}body.land #prac .prr .rate i{font-size:20px}body.land #prac .incl{font-size:9.5px}
+body.land #prac .pr2{min-height:30px}
+body.pracmode #board .sc,body.pracmode #call{visibility:hidden}
+#prSet{display:none;margin-left:6px;font-size:10.5px;padding:1px 7px;border-radius:8px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.1);color:#fff;white-space:nowrap;touch-action:manipulation}
+body.port #prSet{display:inline-block}body.port #prac .pr1{justify-content:flex-start}body.port #prac .pr1 .rp{margin-left:auto}
+#prac.folded .prd{display:none}
+body.port #prac{width:min(306px,calc(100vw - 16px))}body.port #prac .pr2{font-size:12.5px;overflow:hidden}

@@ -443,8 +443,11 @@ const SL = { want: false, since: 0, seq: 0, key: -1, used: false, toggles: 0, sh
 const SL_DWELL = 1200;
 function setSmashLow(low, now) {
   if (low === smashLowNow) return; smashLowNow = low; SL.toggles++; if (now - SL.lastT < 300) SL.short++; SL.lastT = now; SL.log.push([Math.round(now), low ? 1 : 0, SL.seq]); if (SL.log.length > 200) SL.log.shift();
-  const bt = $('tbSmash'); bt.classList.toggle('low', low); bt.querySelector('b').textContent = low ? '抽' : '殺球'; bt.querySelector('small').textContent = low ? '▼' : 'SMASH';
+  const bt = $('tbSmash'); bt.classList.toggle('low', low); bt.querySelector('b').textContent = low ? '抽' : '殺球'; bt.querySelector('small').textContent = low ? '▼' : 'SMASH'; smashAria();
 }
+// v11: hidden badges carry no text (and are aria-hidden); the button's aria-label always says what a press does now
+function badge(id, text, on) { const e = $(id); e.classList.toggle('hide', !on); e.textContent = on ? text : ''; e.setAttribute('aria-hidden', on ? 'false' : 'true'); }
+function smashAria() { const bt = $('tbSmash'); bt.setAttribute('aria-label', smashLowNow ? '抽球（球太低，按殺球會改為抽球）' : bt.classList.contains('now') ? '殺球（現在！）' : bt.classList.contains('armed') ? '殺球（已預備，擊球時殺球）' : '殺球'); }
 function slIncoming(e) { const me = m && m.players[mySeat]; if (me && e.p != null && m.players[e.p] && m.players[e.p].team !== me.team) SL.seq++; } // an opponent stroke = a new incoming shot
 function updSmashBtn() {
   const now = performance.now(), me = m && (state === 'play' || state === 'end') && role !== 'spectator' ? m.players[mySeat] : null;
@@ -468,8 +471,8 @@ function updAid() {
 // after updSmashBtn: show the cue on the button (the label has already been put on 殺球 for it), and the practice 預備 badge
 function showAid() {
   const bt = $('tbSmash'), now = AID.now && !smashLowNow, armed = !now && armedNow();
-  if (now !== bt.classList.contains('now')) { bt.classList.toggle('now', now); $('nowCue').classList.toggle('hide', !now); if (now && FREEZE.aidArm) { FREEZE.aidArm = false; FREEZE.frozen = true; } }
-  if (armed !== bt.classList.contains('armed')) { bt.classList.toggle('armed', armed); $('armCue').classList.toggle('hide', !armed); }
+  if (now !== bt.classList.contains('now')) { bt.classList.toggle('now', now); badge('nowCue', '現在！', now); smashAria(); if (now && FREEZE.aidArm) { FREEZE.aidArm = false; FREEZE.frozen = true; } }
+  if (armed !== bt.classList.contains('armed')) { bt.classList.toggle('armed', armed); badge('armCue', '預備', armed); smashAria(); }
 }
 // v10 practice: a 殺球 press made while the feed is on its way (or before it) is kept until contact — for laggy input and beginners.
 // While the ball is high enough the press is renewed every frame (so it smashes at contact); while it is too low it is withheld (plain 抽球).
@@ -498,25 +501,38 @@ function updPrac() {
   const s = m.smStats[teamOf(mySeat)];
   { const bd = $('board'); if (bd) { const r = appRect(bd); if (r.height) { el.style.setProperty('--pracy', Math.round(r.bottom + 6) + 'px'); el.style.setProperty('--pracw', Math.round(r.width) + 'px'); } } }
   if (!el.firstChild) {
-    el.innerHTML = '<div class="pr1"><b>殺球練習</b><span class="rate" id="prRateL">致勝率 <i id="prRate">0%</i></span></div><div class="pr2" id="prDet"></div><div class="prd" id="prDiff"><button data-d="easy">簡單</button><button data-d="normal">普通</button><button data-d="hard">困難</button></div><div class="prd prs" id="prSlow"><span>慢動作</span><button data-s="1">關</button><button data-s="0.5">0.5×</button><button data-s="0.35">0.35×</button></div>';
+    el.innerHTML = '<div class="pr1"><b>殺球練習</b><span class="rp" id="prRP" title="練習每一球都計分（rally scoring）">你 <i id="prMe">0</i> : <i id="prOp">0</i> 對手</span><button id="prSet" aria-expanded="false" aria-label="練習設定：難度與慢動作">設定 ▾</button></div>'
+      + '<div class="prr"><span class="rate" id="prRateL"></span><small class="incl" title="致勝率 =（致勝 + 逼失誤）÷ 殺球">含逼失誤</small></div><div class="pr2" id="prDet"></div>'
+      + '<div class="prd" id="prDiff"><button data-d="easy">簡單</button><button data-d="normal">普通</button><button data-d="hard">困難</button></div>'
+      + '<div class="prd prs" id="prSlow"><span>慢動作</span><button data-s="1">關</button><button data-s="0.5">0.5×</button><button data-s="0.35">0.35×</button></div>';
+    let setT = 0; // a touch tap fires pointerdown and then a click (detail 0 in some browsers): toggle once
+    $('prSet').addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); setT = performance.now(); togglePracSet(); });
+    $('prSet').addEventListener('click', (e) => { if (performance.now() - setT > 600) togglePracSet(); });
     $('prSlow').addEventListener('pointerdown', (e) => { const b = e.target.closest('button'); if (!b) return; e.preventDefault(); e.stopPropagation(); setSlow(b.dataset.s); });
     $('prSlow').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b && e.detail === 0) setSlow(b.dataset.s); });
     $('prDiff').addEventListener('pointerdown', (e) => { const b = e.target.closest('button'); if (!b) return; e.preventDefault(); e.stopPropagation(); setPracDiff(b.dataset.d); });
     $('prDiff').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b && e.detail === 0) setPracDiff(b.dataset.d); }); // keyboard
   }
   if (s.n) $('prRateL').innerHTML = `致勝率 <i id="prRate">${Math.round(100 * (s.win + s.forced) / s.n)}%</i>`; else $('prRateL').innerHTML = '<i id="prRate" class="none">尚未殺球</i>';
+  const rp = m.rp || [0, 0], mt = teamOf(mySeat); $('prMe').textContent = rp[mt]; $('prOp').textContent = rp[1 - mt];
   $('prDet').innerHTML = `<span>殺球 ${s.n}・致勝 ${s.win}・逼失誤 ${s.forced}</span><span>・被回擊 ${s.ret}・失誤 ${s.own}</span>`;
   el.querySelectorAll('#prDiff button').forEach((b) => b.classList.toggle('sel', b.dataset.d === m.diff));
   el.querySelectorAll('#prSlow button').forEach((b) => b.classList.toggle('sel', +b.dataset.s === SLOW));
+  el.classList.toggle('folded', PORT && !pracSetOpen); $('prSet').textContent = pracSetOpen ? '收起 ▴' : `設定 ▾`; $('prSet').setAttribute('aria-expanded', String(!PORT || pracSetOpen));
 }
 // v10 慢動作: practice runs the game clock at 1× / 0.5× / 0.35× (?slow=0.5 or the panel switch; remembered)
-let SLOW = 1; const PRAC = { fed: false }; const SLOWS = [1, 0.5, 0.35];
-function slowDefault() { const q = +QS.get('slow'); if (SLOWS.includes(q)) return q; try { const v = +localStorage.pbSlow; if (SLOWS.includes(v)) return v; } catch (_) {} return 1; }
+let SLOW = 1, TS = 1; const PRAC = { fed: false };
+function slowNow(me) { return SLOW < 1 && me && m.live && m.phase === 'rally' && m.lastHitTeam !== me.team && m.ball.x * PB.teamSign(me.team) > -0.4; } // ball crossing / on my side, coming at me
+const SLOWS = [1, 0.5, 0.35];
+function slowDefault() { if (QS.has('slow') && /^(|on|true)$/.test(QS.get('slow'))) return 0.5; const q = +QS.get('slow'); if (SLOWS.includes(q)) return q; try { const v = +localStorage.pbSlow; if (SLOWS.includes(v)) return v; } catch (_) {} return 1; }
 function setSlow(v) { if (!SLOWS.includes(+v)) return; SLOW = +v; SFX.click(); try { localStorage.pbSlow = String(SLOW); } catch (_) {} hudSig = ''; updPrac(); }
+// v11 portrait: the difficulty / 慢動作 rows fold away behind 「設定」 so the panel stays off the far court (landscape always shows them)
+let pracSetOpen = false;
+function togglePracSet() { pracSetOpen = !pracSetOpen; SFX.click(); updPrac(); }
 function pracDiffDefault() { const q = QS.get('diff'); if (PB.DIFF[q]) return q; try { if (PB.DIFF[localStorage.pbPracDiff]) return localStorage.pbPracDiff; } catch (_) {} return 'easy'; }
 function setPracDiff(d) {
   if (!m || !m.practice || !PB.DIFF[d]) return; SFX.click(); try { localStorage.pbPracDiff = d; } catch (_) {}
-  m.diff = d; m.cfg.diff = d; m.smStats = [0, 1].map(() => ({ n: 0, win: 0, forced: 0, own: 0, ret: 0 })); m.smTrack = null; hudSig = ''; updPrac(); // fresh stats for the new level
+  m.diff = d; m.cfg.diff = d; m.smStats = [0, 1].map(() => ({ n: 0, win: 0, forced: 0, own: 0, ret: 0 })); m.smTrack = null; m.rp = [0, 0]; hudSig = ''; updPrac(); // fresh stats for the new level
 }
 function lowTip() { lowTipT = performance.now() + 1300; }
 function handleEvent(e) {
@@ -528,13 +544,14 @@ function handleEvent(e) {
     case 'net': SFX.net(); break;
     case 'fault': SFX.whistle(); lastFault = e; break;
     case 'point': case 'sideout': case 'second': {
-      const mine = role !== 'spectator' && teamOf(mySeat) === (e.k === 'point' ? e.team : (lastFault ? 1 - lastFault.team : -1));
+      let mine = role !== 'spectator' && teamOf(mySeat) === (e.k === 'point' ? e.team : (lastFault ? 1 - lastFault.team : -1));
       (e.k === 'point' ? SFX.point : SFX.side)();
       const spec = role === 'spectator', myT = teamOf(mySeat);
       const rel = (i) => (spec ? '' : i === mySeat ? '（你）' : teamOf(i) === myT ? '（隊友）' : '（對手）');
       const side = (t) => (spec ? m.teamNames[t] : t === myT ? '你方' : '對手');
       const who = !lastFault ? '' : lastFault.who >= 0 && m.players[lastFault.who] ? m.players[lastFault.who].name + rel(lastFault.who) + ' 失誤・' : side(lastFault.team) + ' 失誤・';
-      const res = e.k === 'point' ? side(e.team) + '得分！' : e.k === 'sideout' ? '換' + side(e.team) + '發球（Side Out）' : e.text;
+      let res = e.k === 'point' ? side(e.team) + '得分！' : e.k === 'sideout' ? '換' + side(e.team) + '發球（Side Out）' : e.text;
+      if (m.practice && lastFault) { const win = 1 - lastFault.team, rp = m.rp || [0, 0]; mine = win === myT; res = (mine ? '你得 1 分' : '對手得 1 分') + `（你 ${rp[myT]} : ${rp[1 - myT]} 對手）`; updPrac(); } // practice: every rally counts
       showMsg(lastFault ? lastFault.reason : '', who + res, mine ? 'good' : 'bad', 2300);
       lastReason = lastFault ? lastFault.reason : ''; lastFault = null; break; }
     case 'call': if (m.practice) break; { const spec = role === 'spectator', ot = spec ? 0 : teamOf(mySeat);
@@ -559,6 +576,7 @@ function updHUD() {
     $('scL').textContent = m.score[lt]; $('scR').textContent = m.score[rt];
     $('tmL').classList.toggle('serving', m.servingTeam === lt); $('tmR').classList.toggle('serving', m.servingTeam === rt);
     { const ow = m.score[lt], op = m.score[rt]; $('call').innerHTML = `<b class="own">${ow}</b><i>-</i>${op}`; } // own team first, like the rows
+    document.body.classList.toggle('pracmode', !!m.practice); // v11: practice hides the pickleball score (rally points are in the panel)
     $('hdr').textContent = m.practice ? `殺球練習・${DIFF_NAME[m.diff] || ''}${SLOW < 1 ? `・慢動作 ${SLOW}×` : ''}` : `${m.mode === 2 ? '雙打' : '單打'}・${DIFF_NAME[m.diff] || ''}・${m.target}分`;
     const sp = m.players[m.server];
     const sw = m.servingTeam === lt && role !== 'spectator' ? '你方' : m.teamNames[m.servingTeam];
@@ -978,8 +996,9 @@ function frameBody(now) {
     if (role === 'local' || role === 'host') {
       const me = m.players[mySeat]; if (me && me.ctrl === 'local') localInput(me);
       if (hostResumeT > 0) hostResumeT -= dt;
-      if (m.practice) { m.feedWait = PRAC.fed ? 3 * SLOW : 0.8; armTick(me); } // practice: next feed ~3 s (real time) after a point, or at once on a tap
-      if (!paused && !hostAway && !(role === 'host' && hostResumeT > 0)) PB.step(m, m.practice ? dt * SLOW : dt); // v10: 慢動作 (practice only)
+      if (m.practice) { m.feedWait = PRAC.fed ? 2.5 : 0.8; armTick(me); } // practice: next feed 2.5 s after a point (dead time runs at full speed), or at once on a tap
+      if (m.practice) { const tgt = slowNow(me) ? SLOW : 1; TS += (tgt - TS) * (1 - Math.exp(-dt * (tgt < TS ? 14 : 6))); if (Math.abs(TS - tgt) < 0.01) TS = tgt; } else TS = 1;
+      if (!paused && !hostAway && !(role === 'host' && hostResumeT > 0)) PB.step(m, dt * TS); // v10/v11: 慢動作 only while the ball is on my side coming at me
       const k = 1 - Math.exp(-dt * 18);
       for (const p of m.players) { if (p.ctrl === 'remote') { p.rp = p.rp ? { x: p.rp.x + (p.x - p.rp.x) * k, y: p.rp.y + (p.y - p.rp.y) * k } : { x: p.x, y: p.y }; } else p.rp = null; }
       const evs = m.events.splice(0); evs.forEach(handleEvent); if (role === 'host') { outbox.push(...evs); hostTick(dt); }
@@ -993,6 +1012,6 @@ resize();
 function loop(now) { frame(now); requestAnimationFrame(loop); }
 requestAnimationFrame(loop);
 // test hooks
-window.__pb = { looks: () => ({ room, prefs, rs: roomSeats() }), get m() { return m; }, proj, get view() { return { W, H, F, touchUI, port: PORT, pan: PAN, safe: safeRect(), ballR: lastBallR, tags: lastTags, hud: hudBlock, fpsY }; }, showMsg, get state() { return state; }, get role() { return role; }, get room() { return roomCode; }, get roster() { return roster; }, get net() { return net; }, get fps() { return fps; }, get seat() { return mySeat; }, get forced() { return FORCED; }, appRect, appXY, get orient() { return opt.orient; }, hitCount, startLocal, press, juice, get smashLow() { return smashLowNow; }, contactZ: () => contactZ(m && m.players[mySeat]), get lowTipT() { return lowTipT; }, SL, AID, startPractice, setPracDiff, setSlow, get slow() { return SLOW; }, get armed() { return armedNow(); }, ARM, PRAC, fireSmash: (k) => { for (let i = 0; i < k; i++) smashJuice(1); }, freezeJuice: (k) => { FREEZE.armed = true; FREEZE.at = k | 0; FREEZE.left = -1; FREEZE.frozen = false; }, unfreeze: () => { FREEZE.frozen = false; FREEZE.left = -1; FREEZE.armed = false; FREEZE.aidArm = false; }, hold: () => { FREEZE.frozen = true; }, freezeAid: () => { FREEZE.aidArm = true; }, get freezeOn() { return FREEZE.frozen; }, get freeze() { return FREEZE; }, get cards() { return smashCard.n || 0; } };
+window.__pb = { looks: () => ({ room, prefs, rs: roomSeats() }), get m() { return m; }, proj, get view() { return { W, H, F, touchUI, port: PORT, pan: PAN, safe: safeRect(), ballR: lastBallR, tags: lastTags, hud: hudBlock, fpsY }; }, showMsg, get state() { return state; }, get role() { return role; }, get room() { return roomCode; }, get roster() { return roster; }, get net() { return net; }, get fps() { return fps; }, get seat() { return mySeat; }, get forced() { return FORCED; }, appRect, appXY, get orient() { return opt.orient; }, hitCount, startLocal, press, juice, get smashLow() { return smashLowNow; }, contactZ: () => contactZ(m && m.players[mySeat]), get lowTipT() { return lowTipT; }, SL, AID, startPractice, setPracDiff, togglePracSet, setSlow, get slow() { return SLOW; }, get ts() { return TS; }, get armed() { return armedNow(); }, ARM, PRAC, fireSmash: (k) => { for (let i = 0; i < k; i++) smashJuice(1); }, freezeJuice: (k) => { FREEZE.armed = true; FREEZE.at = k | 0; FREEZE.left = -1; FREEZE.frozen = false; }, unfreeze: () => { FREEZE.frozen = false; FREEZE.left = -1; FREEZE.armed = false; FREEZE.aidArm = false; }, hold: () => { FREEZE.frozen = true; }, freezeAid: () => { FREEZE.aidArm = true; }, get freezeOn() { return FREEZE.frozen; }, get freeze() { return FREEZE; }, get cards() { return smashCard.n || 0; } };
 if (QS.get('demo') === 'smash') startPractice(); // ?demo=smash opens 殺球練習 directly
 })();

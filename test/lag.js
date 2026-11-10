@@ -10,19 +10,20 @@ function gauss(r) { return Math.sqrt(-2 * Math.log(r() || 1e-9)) * Math.cos(2 * 
 function run({ scale, arm, how, diff, seed, lo = 1, hi = 3 }) {
   const m = PB.createMatch({ mode: 1, diff, seed, target: 999, practice: 'smash', seats: [{ ctrl: 'bot' }, { ctrl: 'ai' }] });
   const p = m.players[0], R = rnd(seed * 31 + 5), H = { key: '' }, A = { k: null, on: false }, st = { feeds: 0, pressed: 0, smash: 0, low: 0, late: 0, missed: 0 };
-  let cur = null, fed = false; const dtR = 1 / 60, dt = dtR * scale; // one real frame
+  let cur = null, fed = false; const dtR = 1 / 60; let TS = 1, rt = 0; // real frame / real clock; v11: slow only while the ball is on my side coming at me
   for (let i = 0; i < 60 * 60 * MIN; i++) {
-    m.feedWait = fed ? 3 * scale : 0.8; const b = m.ball; p.in.mx = p.in.my = 0;
+    m.feedWait = fed ? 2.5 : 0.8; const b = m.ball; p.in.mx = p.in.my = 0;
+    { const tgt = scale < 1 && m.live && m.phase === 'rally' && m.lastHitTeam !== p.team && b.x < 0.4 ? scale : 1; TS += (tgt - TS) * (1 - Math.exp(-dtR * (tgt < TS ? 14 : 6))); if (Math.abs(TS - tgt) < 0.01) TS = tgt; } const dt = dtR * TS;
     const incoming = m.live && m.phase === 'rally' && m.lastHitTeam !== p.team, key = m.point + ':' + m.hits;
     if (incoming) {
-      if (H.key !== key) { if (cur && !cur.hit) st.missed++; H.key = key; const L = (lo + R() * (hi - lo)) * scale; H.go = m.t + L; H.L = L; H.ex = gauss(R) * 0.45; H.ey = gauss(R) * 0.45; const sa = PB.smashAid(m, p); H.spot = sa && sa.spot; H.press = how === 'feed' ? m.t + L : null; cur = { hit: false, pressed: false }; st.feeds++; }
+      if (H.key !== key) { if (cur && !cur.hit) st.missed++; H.key = key; const L = lo + R() * (hi - lo); H.go = rt + L; H.L = L; H.ex = gauss(R) * 0.45; H.ey = gauss(R) * 0.45; const sa = PB.smashAid(m, p); H.spot = sa && sa.spot; H.press = how === 'feed' ? rt + L : null; cur = { hit: false, pressed: false }; st.feeds++; }
       if (!H.spot) { const sa = PB.smashAid(m, p); if (sa && sa.spot) H.spot = sa.spot; }
-      if (how === 'cue' && H.press == null) { const sa = PB.smashAid(m, p); if (sa && sa.contact && sa.contact.ok && sa.contact.t <= 0.45) H.press = m.t + H.L; }
-      if (m.t >= H.go && H.spot) { const tx = Math.min(-C.K - 0.3, H.spot.x + H.ex), ty = H.spot.y + H.ey, dx = tx - p.x, dy = ty - p.y, d = Math.hypot(dx, dy); if (d > 0.1) { p.in.mx = dx / d * Math.min(1, d / 0.4); p.in.my = dy / d * Math.min(1, d / 0.4); } }
-      if (H.press != null && m.t >= H.press && !cur.pressed) { p.in.shot = 'smash'; p.in.shotT = m.t; cur.pressed = true; st.pressed++; if (arm) A.k = key; }
+      if (how === 'cue' && H.press == null) { const sa = PB.smashAid(m, p); if (sa && sa.contact && sa.contact.ok && sa.contact.t <= 0.45) H.press = rt + H.L; }
+      if (rt >= H.go && H.spot) { const tx = Math.min(-C.K - 0.3, H.spot.x + H.ex), ty = H.spot.y + H.ey, dx = tx - p.x, dy = ty - p.y, d = Math.hypot(dx, dy); if (d > 0.1) { p.in.mx = dx / d * Math.min(1, d / 0.4); p.in.my = dy / d * Math.min(1, d / 0.4); } }
+      if (H.press != null && rt >= H.press && !cur.pressed) { p.in.shot = 'smash'; p.in.shotT = m.t; cur.pressed = true; st.pressed++; if (arm) A.k = key; }
       if (arm && A.k === key) { if (PB.inKitchen(p)) { if (A.on) { p.in.shotT = -9; A.on = false; } } else if (b.z >= PB.SMASH_ZH) { p.in.shot = 'smash'; p.in.shotT = m.t; A.on = true; } else if (A.on) { p.in.shotT = -9; A.on = false; } }
     } else { A.on = false; const dx = -4.6 - p.x, dy = -p.y, d = Math.hypot(dx, dy); if (d > 0.2 && m.phase !== 'rally') { p.in.mx = dx / d * 0.6; p.in.my = dy / d * 0.6; } }
-    PB.step(m, dt);
+    PB.step(m, dt); rt += dtR;
     for (const e of m.events) { if (e.feed) fed = true; if (e.k === 'hit' && e.p === 0 && cur && !cur.hit) { cur.hit = true; if (e.ds) st.smash++; else if (e.low) st.low++; else st.late++; } }
     m.events.length = 0;
   }

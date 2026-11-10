@@ -29,14 +29,15 @@ const pct = (a, b) => (b ? (100 * a / b).toFixed(0) + '%' : '—');
   { const { p, tapEl, ctx } = await mk(390, 844, '?demo=smash&slow=0.35', 'slow');
     await p.waitForTimeout(500); const t0 = await p.evaluate(() => ({ g: __pb.m.t, r: performance.now() })); await p.waitForTimeout(3000); const t1 = await p.evaluate(() => ({ g: __pb.m.t, r: performance.now(), s: __pb.slow, hdr: document.getElementById('hdr').textContent, sel: document.querySelector('#prSlow .sel').textContent }));
     const rate = (t1.g - t0.g) / ((t1.r - t0.r) / 1000);
-    ok(t1.s === 0.35 && Math.abs(rate - 0.35) < 0.05 && /慢動作 0.35×/.test(t1.hdr) && t1.sel === '0.35×', `?slow=0.35: game clock runs at ${rate.toFixed(2)}× real time, header 「${t1.hdr}」, panel shows ${t1.sel}`);
-    await tapEl('#prSlow button[data-s="0.5"]'); const s2 = await p.evaluate(() => ({ s: __pb.slow, saved: localStorage.pbSlow, st: __pb.state }));
+    const tsMin = await p.evaluate(() => new Promise((d) => { let mn = 9; const t0 = performance.now(); const f = () => { mn = Math.min(mn, __pb.ts); if (performance.now() - t0 < 4000) requestAnimationFrame(f); else d(mn); }; f(); })); // v11: slow only while the ball is on my side
+    ok(t1.s === 0.35 && rate > 0.33 && rate < 0.95 && tsMin <= 0.36 && /慢動作 0.35×/.test(t1.hdr) && t1.sel === '0.35×', `?slow=0.35: game clock averages ${rate.toFixed(2)}× real time (0.35× while the ball is on my side, min ${tsMin.toFixed(2)}), header 「${t1.hdr}」, panel shows ${t1.sel}`);
+    if (await p.evaluate(() => document.getElementById('prac').classList.contains('folded'))) await tapEl('#prSet'); await tapEl('#prSlow button[data-s="0.5"]'); const s2 = await p.evaluate(() => ({ s: __pb.slow, saved: localStorage.pbSlow, st: __pb.state }));
     ok(s2.s === 0.5 && s2.saved === '0.5' && s2.st === 'play', `panel 慢動作 switch: 0.5× (saved ${s2.saved}), still playing`);
     await tapEl('#prSlow button[data-s="1"]');
     // wait for a point to end, then time the next feed
     await p.waitForFunction(() => __pb.m.phase === 'serve' && __pb.PRAC.fed, null, { timeout: 30000, polling: 20 }); const ts = Date.now();
     await p.waitForFunction(() => __pb.m.phase === 'rally', null, { timeout: 15000, polling: 20 }); const gap = (Date.now() - ts) / 1000;
-    ok(gap >= 2.6 && gap <= 4, `after a point the next feed waits for me: ${gap.toFixed(1)} s (v9: 0.8 s)`);
+    ok(gap >= 2.2 && gap <= 4, `after a point the next feed waits for me: ${gap.toFixed(1)} s (v9: 0.8 s; v11: 2.5 s)`);
     await p.screenshot({ path: SHOT + 'practice_panel_slow_390x844.png' });
     await p.waitForFunction(() => __pb.m.phase === 'serve', null, { timeout: 30000, polling: 20 }); const srv = await p.evaluate(() => document.getElementById('srv').textContent);
     await p.waitForTimeout(500); const ta = Date.now(); await tapEl('#tbDrive'); await p.waitForFunction(() => __pb.m.phase === 'rally', null, { timeout: 5000, polling: 20 }).catch(() => {}); const tg = (Date.now() - ta) / 1000;

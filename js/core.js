@@ -211,6 +211,7 @@ function fault(m, team, reason, who) {
   if (m.phase !== 'rally' && m.phase !== 'serve') return;
   if (m.smTrack) { const t = m.smTrack; smResolve(m, team === t.team ? (t.touched ? 'ret' : 'own') : t.touched ? 'forced' : 'win'); }
   m.phase = 'dead'; m.phaseT = 0; m.live = false;
+  if (m.practice) (m.rp || (m.rp = [0, 0]))[1 - team]++; // v11 practice: rally points (every rally scores for whoever won it)
   m.stats.faults[reason] = (m.stats.faults[reason] || 0) + 1; m.stats.rallies.push(m.rally); m.stats.points++;
   const st = m.servingTeam;
   let out;

@@ -39,7 +39,7 @@ function windowTrial(pressAfter) {
     const g = await p.evaluate(() => ({ d: __pb.m.diff, sel: document.querySelector('#prDiff .sel') && document.querySelector('#prDiff .sel').textContent, txt: document.getElementById('prac').innerText }));
     ok(g.d === 'easy' && g.sel === '簡單', `practice from the menu with the match level 困難 saved: starts on ${g.d} (${g.sel})`);
     // the switch inside practice
-    await p.waitForTimeout(4000); await tapEl('#prDiff button[data-d="hard"]');
+    await p.waitForTimeout(4000); if (await p.evaluate(() => document.getElementById('prac').classList.contains('folded'))) await tapEl('#prSet'); await tapEl('#prDiff button[data-d="hard"]'); // v11: portrait folds the settings behind 設定
     const s = await p.evaluate(() => ({ d: __pb.m.diff, saved: localStorage.pbPracDiff, n: __pb.m.smStats[0].n, sel: document.querySelector('#prDiff .sel').textContent, rate: document.getElementById('prRate').textContent, st: __pb.state }));
     ok(s.d === 'hard' && s.saved === 'hard' && s.sel === '困難' && s.n === 0 && s.rate === '尚未殺球' && s.st === 'play', `tap 困難 in the panel: level ${s.d}, saved ${s.saved}, stats reset (致勝率 ${s.rate}), still playing`);
     await p.reload(); await p.evaluate(() => __pb.startPractice()); await p.waitForTimeout(300);

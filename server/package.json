@@ -1,0 +1,1 @@
+{ "name": "pickleball-relay", "private": true, "main": "relay.js", "scripts": { "start": "node relay.js" }, "engines": { "node": ">=20" }, "dependencies": { "ws": "^8.18.0" } }

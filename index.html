@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0d1b33">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>匹克球對決 Pickle Duel</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='28' fill='%23e6f03c'/%3E%3Ccircle cx='22' cy='24' r='4' fill='%23b9c21e'/%3E%3Ccircle cx='40' cy='22' r='4' fill='%23b9c21e'/%3E%3Ccircle cx='32' cy='38' r='4' fill='%23b9c21e'/%3E%3Ccircle cx='20' cy='42' r='4' fill='%23b9c21e'/%3E%3Ccircle cx='44' cy='40' r='4' fill='%23b9c21e'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="cv"></canvas>
+
+<!-- HUD -->
+<div id="hud" class="hide">
+  <button id="bPause" class="icon" aria-label="選單">☰</button>
+  <div id="board">
+    <div class="tm" id="tmL"><div class="nm" id="nmL"></div><div class="sc" id="scL">0</div></div>
+    <div class="mid"><div id="call">0-0-2</div><div id="srv">發球</div></div>
+    <div class="tm" id="tmR"><div class="sc" id="scR">0</div><div class="nm" id="nmR"></div></div>
+  </div>
+  <button id="bSound" class="icon" aria-label="音效">🔊</button>
+</div>
+<div id="msg" class="hide"><div id="msgA"></div><div id="msgB"></div></div>
+<div id="tip" class="hide"></div>
+<div id="keys" class="hide">WASD／方向鍵 移動 · J／空白鍵 抽球 · K 吊小球 · L 高吊球 · Esc 選單</div>
+
+<!-- touch controls -->
+<div id="touch" class="hide">
+  <div id="joyZone"><div id="joyBase"><div id="joyKnob"></div></div><div id="joyHint">按住拖曳移動</div></div>
+  <div id="btns">
+    <button class="tb" id="tbLob" data-shot="lob"><b>高吊</b><small>LOB</small></button>
+    <button class="tb" id="tbDink" data-shot="dink"><b>吊小球</b><small>DINK</small></button>
+    <button class="tb big" id="tbDrive" data-shot="drive"><b>抽球</b><small>DRIVE</small></button>
+  </div>
+</div>
+
+<!-- menu -->
+<div id="menu" class="ov">
+  <div class="card">
+    <div class="logo"><span class="ballico"></span><h1>匹克球對決</h1><span class="en">PICKLE DUEL</span></div>
+    <label class="row">暱稱 <input id="nick" maxlength="8" placeholder="輸入暱稱" autocomplete="off"></label>
+    <div class="row opts">
+      <span>電腦難度</span>
+      <div class="seg" id="segDiff"><button data-v="easy">簡單</button><button data-v="normal" class="sel">普通</button><button data-v="hard">困難</button></div>
+      <span>局分</span>
+      <div class="seg" id="segTarget"><button data-v="7">7 分</button><button data-v="11" class="sel">11 分</button><button data-v="15">15 分</button></div>
+    </div>
+    <h2>單機練習（電腦補位）</h2>
+    <div class="row two">
+      <button class="big b1" id="bS1">🏓 單打 1 對 1</button>
+      <button class="big b2" id="bS2">👥 雙打 2 對 2</button>
+    </div>
+    <h2>線上對戰（最多 4 人）</h2>
+    <div class="row two">
+      <button class="big b3" id="bHost">建立房間</button>
+      <div class="joinbox"><input id="code" inputmode="numeric" maxlength="4" placeholder="4 位數房號"><button class="big b4" id="bJoin">加入</button></div>
+    </div>
+    <div class="row foot"><button id="bRules" class="link">📖 規則說明</button><span id="status"></span><button id="bRetry" class="link hide">重試</button></div>
+  </div>
+</div>
+
+<!-- room -->
+<div id="room" class="ov hide">
+  <div class="card">
+    <div class="rhead"><div>房號</div><div id="rcode" title="點一下複製">----</div><button id="bCopy" class="link">複製邀請連結</button></div>
+    <div class="row opts" id="roomOpts">
+      <span>模式</span><div class="seg" id="segMode"><button data-v="1">單打 1v1</button><button data-v="2" class="sel">雙打 2v2</button></div>
+      <span>電腦</span><div class="seg" id="segDiff2"><button data-v="easy">簡單</button><button data-v="normal" class="sel">普通</button><button data-v="hard">困難</button></div>
+      <span>局分</span><div class="seg" id="segTarget2"><button data-v="7">7</button><button data-v="11" class="sel">11</button><button data-v="15">15</button></div>
+    </div>
+    <div id="seats"></div>
+    <div class="row small" id="roomNote">點選座位換位置；空位由電腦補上。</div>
+    <div class="row two"><button class="big b1" id="bStart">開始比賽</button><button class="big ghost" id="bLeave">離開房間</button></div>
+    <div class="row foot"><span id="rstatus"></span></div>
+  </div>
+</div>
+
+<!-- end -->
+<div id="end" class="ov hide">
+  <div class="card">
+    <h1 id="endT">藍隊獲勝！</h1>
+    <div id="endS">11 : 7</div>
+    <div id="endSub"></div>
+    <div class="row two"><button class="big b1" id="bAgain">再來一局</button><button class="big ghost" id="bMenu">回主選單</button></div>
+  </div>
+</div>
+
+<!-- pause -->
+<div id="pause" class="ov hide">
+  <div class="card">
+    <h1>暫停</h1>
+    <div class="row two"><button class="big b1" id="bResume">繼續</button><button class="big ghost" id="bQuit">離開比賽</button></div>
+    <div class="row"><button class="link" id="bRules2">📖 規則說明</button></div>
+  </div>
+</div>
+
+<!-- rules -->
+<div id="rules" class="ov hide">
+  <div class="card rules">
+    <h1>匹克球規則（簡要）</h1>
+    <ul>
+      <li><b>發球</b>：低手發球，站在底線後，<b>對角</b>發到對方發球區；球不能落在對方<b>廚房區</b>（含廚房線）。</li>
+      <li><b>兩跳規則</b>：發球必須落地一次才能回擊，回發球也必須落地一次才能擊球；之後才可以<b>截擊</b>（球未落地直接打）。</li>
+      <li><b>廚房區（非截擊區）</b>：網前 2.13 公尺內不能截擊，截擊後也不能因衝力踏進廚房區；球落地後可以進去打。</li>
+      <li><b>計分</b>：只有<b>發球方</b>能得分，打到 11 分且領先 2 分獲勝。接發球方贏得回合 → 換發球（Side Out）。</li>
+      <li><b>雙打報分</b>：「發球方分數－接發球方分數－發球員號碼」，開局為 <b>0-0-2</b>（首發只有一位發球員）。發球方得分時發球員與隊友換邊。</li>
+      <li><b>失誤</b>：出界、掛網、兩次落地、違反兩跳規則、廚房區截擊。</li>
+    </ul>
+    <h2>操作</h2>
+    <ul>
+      <li>手機：左半邊拖曳移動；右側按鈕選擇擊球：<b>抽球</b>（快速平擊，高球自動殺球）、<b>吊小球</b>（輕吊到對方廚房）、<b>高吊</b>（高吊到底線）。</li>
+      <li>球進入揮拍範圍會<b>自動揮拍</b>（用最後按的球路）；移動方向可以控制左右落點。犯規的截擊不會自動揮拍，但你主動按鍵就會照打（並判犯規）。</li>
+      <li>電腦：WASD／方向鍵移動，J／空白鍵 抽球、K 吊小球、L 高吊球；發球時按任一擊球鍵。</li>
+    </ul>
+    <div class="row"><button class="big b1" id="bRulesOk">知道了</button></div>
+  </div>
+</div>
+
+<div id="rot" class="hide"><div>📱↻</div><div>請將手機<b>橫放</b>以獲得最佳體驗</div><button class="link" id="bRotOk">仍要直式</button></div>
+<div id="toast" class="hide"></div>
+
+<script src="js/core.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

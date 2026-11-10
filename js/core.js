@@ -437,7 +437,7 @@ function sub(m, dt) {
     else if (p.ctrl === 'local' || p.ctrl === 'bot') movePlayer(m, p, p.in.mx, p.in.my, C.SPEED, dt);
     else { clampPlayer(m, p); if (p.swing > 0) p.swing = Math.max(0, p.swing - dt * 3.2); } // remote: position comes from network
   }
-  if (m.phase === 'serve' && m.practice) { holdBall(m); if (m.phaseT > 0.8) practiceFeed(m); return; }
+  if (m.phase === 'serve' && m.practice) { holdBall(m); if (m.phaseT > (m.feedWait || 0.8) || (m.feedNow && m.phaseT > 0.3)) { m.feedNow = false; practiceFeed(m); } return; } // v10: the next feed waits ~3 s or for the player's tap
   if (m.phase === 'serve') {
     const s = m.players[m.server];
     holdBall(m);

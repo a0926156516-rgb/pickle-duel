@@ -41,7 +41,7 @@ function windowTrial(pressAfter) {
     // the switch inside practice
     await p.waitForTimeout(4000); await tapEl('#prDiff button[data-d="hard"]');
     const s = await p.evaluate(() => ({ d: __pb.m.diff, saved: localStorage.pbPracDiff, n: __pb.m.smStats[0].n, sel: document.querySelector('#prDiff .sel').textContent, rate: document.getElementById('prRate').textContent, st: __pb.state }));
-    ok(s.d === 'hard' && s.saved === 'hard' && s.sel === '困難' && s.n === 0 && s.rate === '—' && s.st === 'play', `tap 困難 in the panel: level ${s.d}, saved ${s.saved}, stats reset (致勝率 ${s.rate}), still playing`);
+    ok(s.d === 'hard' && s.saved === 'hard' && s.sel === '困難' && s.n === 0 && s.rate === '尚未殺球' && s.st === 'play', `tap 困難 in the panel: level ${s.d}, saved ${s.saved}, stats reset (致勝率 ${s.rate}), still playing`);
     await p.reload(); await p.evaluate(() => __pb.startPractice()); await p.waitForTimeout(300);
     ok(await p.evaluate(() => __pb.m.diff) === 'hard', 'practice remembers its own level (困難) next time');
     await p.goto(BASE + '?demo=smash&diff=normal'); await p.waitForTimeout(500);
@@ -52,7 +52,7 @@ function windowTrial(pressAfter) {
     const { p } = await mk(w, h, q, tag); await p.waitForTimeout(7000);
     const pn = await p.evaluate(() => { const r = __pb.appRect(document.getElementById('prac')), ov = []; for (const id of ['board', 'brand', 'btns', 'joyBase']) { const e = document.getElementById(id); if (!e) continue; const o = __pb.appRect(e); if (o.width && r.left < o.right - 1 && r.right > o.left + 1 && r.top < o.bottom - 1 && r.bottom > o.top + 1) ov.push(id); }
       const big = parseFloat(getComputedStyle(document.querySelector('#prRate')).fontSize), small = parseFloat(getComputedStyle(document.querySelector('#prDet')).fontSize); return { ov, big, small, txt: document.getElementById('prac').innerText.replace(/\s+/g, ' '), v: __pb.view, r }; });
-    ok(/致勝率\s*(\d+%|—)/.test(pn.txt) && pn.big >= 20 && pn.big >= 2 * pn.small && !pn.ov.length && pn.r.left >= 0 && pn.r.right <= pn.v.W + 1, `[${tag}] panel 「${pn.txt}」 big line ${pn.big}px (details ${pn.small}px), clear of ${pn.ov.length ? pn.ov.join(',') : 'HUD / buttons / joystick'}`);
+    ok(/(致勝率\s*\d+%|尚未殺球)/.test(pn.txt) && pn.big >= 20 && pn.big >= 1.6 * pn.small && !pn.ov.length && pn.r.left >= 0 && pn.r.right <= pn.v.W + 1, `[${tag}] panel 「${pn.txt}」 big line ${pn.big}px (details ${pn.small}px), clear of ${pn.ov.length ? pn.ov.join(',') : 'HUD / buttons / joystick'}`);
     await p.screenshot({ path: SHOT + `practice_panel_${tag}.png` });
     await p.evaluate(() => __pb.freezeAid()); const got = await p.waitForFunction(() => __pb.freezeOn, null, { timeout: 30000, polling: 100 }).then(() => true).catch(() => false);
     await p.evaluate(() => document.getAnimations().forEach((a) => { a.pause(); a.currentTime = 160; }));

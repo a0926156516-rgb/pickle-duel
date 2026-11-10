@@ -45,7 +45,7 @@ const DEV = [
       const rects = [...document.querySelectorAll('.tb')].map((e) => __pb.appRect(e)).filter((r) => r.width > 0);
       const out = rects.filter((r) => r.left < 0 || r.top < 0 || r.right > v.W + 1 || r.bottom > v.H + 1).length;
       return { cw: Math.round(Math.max(...xs) - Math.min(...xs)), on: Math.min(...xs) >= 0 && Math.max(...xs) <= v.W && Math.min(...ys) >= 0 && Math.max(...ys) <= v.H, n: rects.length, out, W: v.W }; });
-    ok(g.on && g.n === 3 && g.out === 0 && g.cw >= g.W * 0.55, `[${d.tag}] court ${g.cw}px of ${g.W} fully visible, 3 buttons on screen`);
+    ok(g.on && g.n === 4 && g.out === 0 && g.cw >= g.W * 0.55, `[${d.tag}] court ${g.cw}px of ${g.W} fully visible, 4 buttons on screen`);
     if (d.shots) { await p.waitForTimeout(1500); await p.screenshot({ path: SHOT + `landscape_mode_play_2v2_${d.tag}.png` }); }
     // joystick drags in the sideways-held frame (app directions), sent as physical touches
     const me = () => p.evaluate(() => { const q = __pb.m.players[__pb.seat]; const s = __pb.proj(q.x, q.y, 0); return { sx: s[0], sy: s[1] }; });

@@ -45,7 +45,7 @@ const geom = (p) => p.evaluate(() => {
     g = await geom(p);
     ok(await p.evaluate(() => __pb.state) === 'play' && g.touch, `[${d.tag}] touch tap on 雙打 starts the match, touch controls shown`);
     ok(g.netH && g.meBelowNet, `[${d.tag}] court vertical: net horizontal, own player below the net`);
-    ok(g.on && g.overlap === 0 && g.n === 4, `[${d.tag}] court ${g.cw}x${g.ch}px fully visible under the score bar; pad + 3 buttons never over the court (0 overlap samples) ${g.on && g.overlap === 0 ? '' : JSON.stringify(g)}`);
+    ok(g.on && g.overlap === 0 && g.n === 5, `[${d.tag}] court ${g.cw}x${g.ch}px fully visible under the score bar; pad + 4 buttons never over the court (0 overlap samples) ${g.on && g.overlap === 0 ? '' : JSON.stringify(g)}`);
     ok(g.cw >= d.w * (d.h < 700 ? 0.65 : 0.72), `[${d.tag}] court uses ${Math.round(100 * g.cw / d.w)}% of the width`);
     ok(g.namesFit, `[${d.tag}] score-bar names not truncated`);
     if (d.shots) await p.screenshot({ path: SHOT + `portrait_play_2v2_${d.tag}.png` });

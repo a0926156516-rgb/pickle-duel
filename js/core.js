@@ -134,15 +134,19 @@ function makeShot(m, p, shot, aimY, aiTarget) {
   const dist = Math.hypot(b.x - p.x, b.y - p.y);
   const stretch = clamp(dist / C.REACH, 0, 1.2);
   const tire = 1 + m.rally / (human ? 14 : D.tire * (m.mode === 2 ? 0.8 : 1) * C.PACE * 0.85); // CPU tires a bit sooner at the slower v5 pace so rallies stay about as long as before // long rallies get harder to sustain (CPU tires faster on hard/doubles so points don't drag)
-  const sig = (human ? HUMAN.sig : D.sig) * (0.7 + 0.6 * stretch) * (b.z < 0.25 ? 1.25 : 1) * Math.sqrt(tire);
-  const perr = (human ? HUMAN.err : D.err) * (human ? 1 : Math.pow(tire, 1.7));
+  let sig = (human ? HUMAN.sig : D.sig) * (0.7 + 0.6 * stretch) * (b.z < 0.25 ? 1.25 : 1) * Math.sqrt(tire);
+  let perr = (human ? HUMAN.err : D.err) * (human ? 1 : Math.pow(tire, 1.7));
   const from = { x: b.x, y: b.y, z: Math.max(b.z, 0.12) };
   let tx, ty, T, clr = 0.12;
   if (aiTarget && aiTarget.y != null) ty = aiTarget.y; else if (human && Math.abs(aimY) > 0.2) ty = aimY * 2.5; else ty = -p.y * 0.45;
-  let kind = shot;
+  let kind = shot, power = 1;
   if (shot === 'drive' && b.z > 1.35 && Math.abs(p.x) < 5.2) kind = 'smash';
-  if (kind === 'smash') { tx = xs * (3.6 + r() * 2.2); const sp = 17; T = Math.hypot(tx - from.x, ty - from.y) / sp; clr = 0.04; }
-  else if (kind === 'drive') { tx = xs * (aiTarget && aiTarget.x ? aiTarget.x : 5.4 + r() * 0.7); const sp = human ? 12.5 : D.drive; T = Math.hypot(tx - from.x, ty - from.y) / sp; clr = 0.1; }
+  // 殺球 button (v6): a ball at shoulder height or above (z ≥ 0.9 m) is smashed down hard; a lower ball can't be hit downward,
+  // so it becomes a flat power drive (20% faster than a drive) that is harder to control.
+  if (shot === 'smash') { if (b.z >= 0.9) { kind = 'smash'; sig *= 1.1; } else { kind = 'drive'; power = 1.25; sig *= 1.35; perr *= 2; } }
+  if (kind === 'smash') { tx = xs * (3.6 + r() * 2.2); const sp = shot === 'smash' ? 18.5 : 17; // a deliberate 殺球 is hit a bit harder than the automatic overhead
+    T = Math.hypot(tx - from.x, ty - from.y) / sp; clr = 0.04; }
+  else if (kind === 'drive') { tx = xs * (aiTarget && aiTarget.x ? aiTarget.x : 5.4 + r() * 0.7); const sp = (human ? 12.5 : D.drive) * power; T = Math.hypot(tx - from.x, ty - from.y) / sp; clr = power > 1 ? 0.07 : 0.1; }
   else if (kind === 'dink') { tx = xs * (1.05 + r() * 0.75); const d = Math.hypot(tx - from.x, ty - from.y); T = Math.max(0.75, d / 5.8); clr = 0.2; }
   else { kind = 'lob'; tx = xs * (5.5 + r() * 0.75); T = 1.5 + r() * 0.35; clr = 0.6; }
   tx += gauss(r) * sig * (kind === 'dink' ? 0.45 : 0.75); ty += gauss(r) * sig;

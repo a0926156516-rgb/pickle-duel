@@ -39,7 +39,7 @@ const alive = async (p) => { const a = await p.evaluate(() => __pb.m ? __pb.m.t 
     if (d.shots) await p.screenshot({ path: OUT + `menu_${d.tag}.png` });
     await p.fill('#nick', '峻慶'); await p.tap('#bS2'); await p.waitForTimeout(1500);
     g = await geom(p);
-    ok(g.touch && g.btns === 3, `[${d.tag}] touch controls visible (${g.btns} buttons)`);
+    ok(g.touch && g.btns === 4, `[${d.tag}] touch controls visible (${g.btns} buttons)`);
     ok(g.overlap === 0, `[${d.tag}] shot buttons do not cover the court (overlap samples ${g.overlap})`);
     ok(g.courtW >= d.w * 0.55, `[${d.tag}] court ${g.courtW}x${g.courtH}px (>=55% of width)`);
     ok(g.court.l > 0 && g.court.r < d.w && g.court.t > 40 && g.court.b < d.h, `[${d.tag}] court fully on screen ${JSON.stringify(g.court, (k, v) => typeof v === 'number' ? Math.round(v) : v)}`);

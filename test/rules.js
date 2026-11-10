@@ -9,6 +9,31 @@ function serve(m, shot = 'drive') { const s = m.players[m.server]; m.phaseT = 1;
 function intercept(m, p, pred) { const q = PB.predict(m).find(pred); p.x = q.x; p.y = q.y; return q; }
 
 { const m = human(1); ok(PB.callText(m) === '0-0', 'singles opening call 0-0'); }
+// v6 殺球: a high ball pressed with 殺球 is smashed (fast, downward); a low ball becomes a harder, flatter power drive
+function rallyShot(z, shot, seed) {
+  const m = PB.createMatch({ mode: 1, seed, seats: [{ ctrl: 'bot' }, { ctrl: 'bot' }], autoServe: 99 });
+  const p = m.players[0], o = m.players[1];
+  m.phase = 'rally'; m.live = true; m.hits = 4; m.bounces = 1; m.lastHitTeam = o.team; m.lastHitter = o.i;
+  p.x = -4.5; p.y = 0; Object.assign(m.ball, { x: -4.3, y: 0, z, vx: -0.5, vy: 0, vz: 0.4 });
+  p.in.shot = shot; p.in.shotT = m.t; let hit = null;
+  for (let i = 0; i < 30 && !hit; i++) { PB.step(m, 1 / 120); hit = m.events.find((e) => e.k === 'hit'); m.events.length = 0; }
+  return hit && { kind: hit.shot, v: Math.hypot(m.ball.vx, m.ball.vy), vz: m.ball.vz };
+}
+{ const S = [], D = [], L = [];
+  for (let k = 1; k <= 12; k++) { S.push(rallyShot(1.3, 'smash', k)); D.push(rallyShot(1.0, 'drive', k)); L.push(rallyShot(0.5, 'smash', k)); }
+  const avg = (a, f) => a.reduce((x, y) => x + f(y), 0) / a.length;
+  ok(S.every((h) => h && h.kind === 'smash'), '殺球 on a high ball (z 1.3 m) is a smash');
+  ok(avg(S, (h) => h.v) > avg(D, (h) => h.v) * 1.3 && avg(S, (h) => h.vz) < 0.5, `smash is much faster than a drive and flat/downward (${avg(S, (h) => h.v).toFixed(1)} vs ${avg(D, (h) => h.v).toFixed(1)} m/s, vz ${avg(S, (h) => h.vz).toFixed(1)})`);
+  ok(L.every((h) => h && h.kind === 'drive') && avg(L, (h) => h.v) > avg(D, (h) => h.v) * 1.05, `殺球 on a low ball (z 0.5 m) is a power drive (${avg(L, (h) => h.v).toFixed(1)} m/s)`);
+  ok(D.every((h) => h && h.kind === 'drive'), 'plain 抽球 at z 1.0 m stays a drive');
+}
+{ // a smash still obeys the kitchen rule
+  const m = PB.createMatch({ mode: 1, seed: 3, seats: [{ ctrl: 'bot' }, { ctrl: 'bot' }], autoServe: 99 }); const p = m.players[0], o = m.players[1];
+  m.phase = 'rally'; m.live = true; m.hits = 4; m.bounces = 0; m.lastHitTeam = o.team; m.lastHitter = o.i;
+  p.x = -1.2; p.y = 0; Object.assign(m.ball, { x: -1.0, y: 0, z: 1.3, vx: -0.5, vy: 0, vz: 0.3 }); p.in.shot = 'smash'; p.in.shotT = m.t;
+  const evs = runUntil(m, (mm) => mm.phase !== 'rally', 1); ok(/廚房/.test(faultOf(evs)), 'smash volley from inside the kitchen is still a kitchen fault: ' + faultOf(evs));
+}
+
 { const m = human(2); ok(PB.callText(m) === '0-0-2', 'doubles opening call 0-0-2'); }
 { // serve positions: server behind baseline on right side (even score), diagonal receiver
   const m = human(1); const s = m.players[m.server], r = m.players[m.receiver];

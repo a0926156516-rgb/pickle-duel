@@ -76,10 +76,10 @@ let touchUI = false;
 function safeRect() {
   const land = W >= H, tu = (touchUI || COARSE) && state === 'play';
   if (PORT) { // controls live below the court
-    const top = H < 700 ? 106 : 114, bottom = tu ? (H < 780 ? 170 : 212) : 8;
+    const top = H < 700 ? 106 : 114, bottom = tu ? (H < 780 ? 186 : 214) : 8; // v6: four bigger shot buttons
     return { l: 6, r: W - 6, t: top, b: H - bottom };
   }
-  const left = tu ? Math.min(118, W * 0.15) : 8, right = tu ? Math.min(118, W * 0.15) : 8;
+  const left = tu ? Math.min(118, W * 0.15) : 8, right = tu ? Math.min(166, W * 0.24) : 8; // right: zig-zag column of 4 shot buttons
   const top = H < 430 ? 46 : 62; void land;
   return { l: left, r: W - right, t: top, b: H - 6 };
 }
@@ -320,7 +320,7 @@ function render(dt) {
   // the net is drawn under everything except objects on the far side of it that are low enough to be hidden by it
   drawNet(ctx); objs.forEach(draw); void farBall;
   if (m.phase === 'rally' || m.phase === 'dead') { trail.push({ ...bv }); if (trail.length > 12) trail.shift(); } else trail.length = 0;
-  if (QS.get('fps') === '1') { ctx.fillStyle = '#fff'; ctx.font = '12px monospace'; ctx.textAlign = 'left'; const kb = $('keys'), ky = kb.classList.contains('hide') || touchUI ? H - 8 : Math.min(H - 8, appRect(kb).top - 6); ctx.fillText(fps.toFixed(0) + ' fps', 8, ky); fpsY = ky; }
+  if (QS.get('fps') === '1') { ctx.fillStyle = '#fff'; ctx.font = '12px monospace'; ctx.textAlign = 'left'; const kb = $('keys'), jh = $('joyHint'), ky = touchUI ? (jh.offsetParent ? Math.min(H - 8, appRect(jh).top - 6) : H - 8) : kb.classList.contains('hide') ? H - 8 : Math.min(H - 8, appRect(kb).top - 6); ctx.fillText(fps.toFixed(0) + ' fps', 8, ky); fpsY = ky; }
 }
 
 // ---------- audio ----------
@@ -456,7 +456,7 @@ const inp = { jx: 0, jy: 0, shot: 'drive', shotT: -9, seq: 0 };
 addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT') return;
   keys[e.code] = true; audio(); if (!e.repeat && touchUI && performance.now() - lastTouchAt > 800) setTouch(false);
-  const map = { KeyJ: 'drive', Space: 'drive', KeyK: 'dink', KeyL: 'lob', KeyZ: 'drive', KeyX: 'dink', KeyC: 'lob' };
+  const map = { KeyJ: 'drive', Space: 'drive', KeyK: 'dink', KeyL: 'lob', KeyI: 'smash', KeyU: 'smash', KeyZ: 'drive', KeyX: 'dink', KeyC: 'lob', KeyV: 'smash' };
   if (map[e.code] && !e.repeat) { press(map[e.code]); e.preventDefault(); }
   if (e.code === 'Escape' && state === 'play') togglePause();
   if (e.code.startsWith('Arrow')) e.preventDefault();
@@ -636,7 +636,7 @@ function connect(first, onMsg, dl, gen) {
   s.onmessage = (e) => {
     if (ws !== s) return; let msg; try { msg = JSON.parse(e.data); } catch (_) { return; }
     if (msg.t === 'ping') return wsend({ t: 'pong' });
-    if (msg.t === 'roster') { roster = msg.pl; renderSeats(); if (isHost) hostRosterChanged(); return; }
+    if (msg.t === 'roster') { roster = dedupeNames(msg.pl); renderSeats(); if (isHost) hostRosterChanged(); return; }
     if (msg.t === 'colorTaken') { toast(`這個座位已被 ${msg.by} 坐走`); return; }
     if (msg.t === 'error') { net = false; failNet(ERR[msg.e] || '錯誤：' + msg.e); if (state === 'room') showMenuOnly(); return; }
     try { onMsg(msg); } catch (err) { console.warn('net handler', err); }
@@ -660,12 +660,14 @@ function openRoom() {
   $('roomNote').textContent = isHost ? '點選座位換位置；空位由電腦補上。把房號告訴朋友，最多 4 人。' : '點選座位換位置；等待房主開始比賽…';
   if (isHost) hostCfg(); else renderSeats();
 }
+// same nickname twice in a room -> 峻慶, 峻慶(2), … (in join order; the original nickname is still used for rejoin matching)
+function dedupeNames(pl) { const cnt = {}; for (const p of pl || []) { const k = String(p.n || '玩家'); cnt[k] = (cnt[k] || 0) + 1; p.dn = cnt[k] > 1 ? `${k}(${cnt[k]})` : k; } return pl || []; }
 function renderSeats() {
   const n = room.mode * 2; const by = {}; for (const p of roster) by[p.c] = p;
   const seat = (i) => { const p = by[i], on = i < n, me = p && p.id === myId;
-    return `<button class="seat${me ? ' me' : ''}${!p ? ' ai' : ''}${on ? '' : ' off'}" data-seat="${i}"><span class="dot" style="background:${room.L && room.L[i] ? COLS[room.L[i].co] : '#888'}"></span>${room.L && room.L[i] && on ? `<span class="cn">${CHARS[room.L[i].ch].n}</span>` : ''}${p ? esc(p.n) + (p.h ? ' 👑' : '') + (me ? '（你）' : '') : on ? '🤖 電腦' : '（單打不使用）'}</button>`; };
+    return `<button class="seat${me ? ' me' : ''}${!p ? ' ai' : ''}${on ? '' : ' off'}" data-seat="${i}"><span class="dot" style="background:${room.L && room.L[i] ? COLS[room.L[i].co] : '#888'}"></span>${room.L && room.L[i] && on ? `<span class="cn">${CHARS[room.L[i].ch].n}</span>` : ''}${p ? esc(p.dn || p.n) + (p.h ? ' 👑' : '') + (me ? '（你）' : '') : on ? '🤖 電腦' : '（單打不使用）'}</button>`; };
   $('seats').innerHTML = [0, 1].map((t) => `<div class="team t${t}"><h3>${room.L && room.L[t] ? COLN[room.L[t].co] + '隊' : TEAM_NAME[t]}</h3>${seat(t)}${room.mode === 2 || roster.some((p) => p.c === t + 2) ? seat(t + 2) : ''}</div>`).join('');
-  const out = roster.filter((p) => p.c >= n); $('roomNote').textContent = out.length ? `${out.map((p) => p.n).join('、')} 目前在單打不使用的座位，會變成觀戰。` : (isHost ? '點選座位換位置；空位由電腦補上。把房號告訴朋友，最多 4 人。' : '點選座位換位置；等待房主開始比賽…');
+  const out = roster.filter((p) => p.c >= n); $('roomNote').textContent = out.length ? `${out.map((p) => p.dn || p.n).join('、')} 目前在單打不使用的座位，會變成觀戰。` : (isHost ? '點選座位換位置；空位由電腦補上。把房號告訴朋友，最多 4 人。' : '點選座位換位置；等待房主開始比賽…');
 }
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 $('seats').addEventListener('click', (e) => { const b = e.target.closest('.seat'); if (!b) return; const i = +b.dataset.seat; if (roster.some((p) => p.c === i && p.id !== myId)) return toast('這個座位已經有人'); SFX.click(); wsend({ t: 'pickColor', c: i }); });
@@ -681,7 +683,7 @@ function host() {
     else if (msg.t === 'msg') hostHandle(msg.from, msg.d);
   });
 }
-function roomSeats() { const n = room.mode * 2, out = []; for (let i = 0; i < n; i++) { const p = roster.find((q) => q.c === i); const pf = p ? (p.id === myId ? myLook() : prefs[p.id] || {}) : null; out.push(p ? { ctrl: 'h', ch: pf.ch, co: pf.co, id: p.id, name: p.n } : { ctrl: 'ai' }); } return out; }
+function roomSeats() { const n = room.mode * 2, out = []; for (let i = 0; i < n; i++) { const p = roster.find((q) => q.c === i); const pf = p ? (p.id === myId ? myLook() : prefs[p.id] || {}) : null; out.push(p ? { ctrl: 'h', ch: pf.ch, co: pf.co, id: p.id, name: p.dn || p.n } : { ctrl: 'ai' }); } return out; }
 function hostCfg() { if (!isHost) return; room = { mode: opt.mode, diff: opt.diff, target: opt.target }; room.L = assignLooks(roomSeats()); renderSeats(); toAll({ t: 'cfg', room }); }
 function hostRosterChanged() { if (state === 'room') hostCfg(); }
 function hostHandle(from, d) {
@@ -697,7 +699,7 @@ function hostHandle(from, d) {
       let i = seatPid.findIndex((q, k) => q && q === pf.pid && free(k)), back = i >= 0;
       if (i < 0) { i = seatNick.findIndex((q, k) => q && q === nick && free(k)); back = i >= 0; }
       if (i < 0) i = m.players.findIndex((p) => free(p.i));
-      if (i >= 0) { const p = m.players[i]; p.ctrl = 'remote'; p.name = nick; seatIds[i] = from; seatPid[i] = pf.pid; seatNick[i] = nick;
+      if (i >= 0) { const p = m.players[i]; p.ctrl = 'remote'; p.name = (() => { let k = 1, nm = nick; while (m.players.some((q) => q.i !== i && q.name === nm)) nm = `${nick}(${++k})`; return nm; })(); seatIds[i] = from; seatPid[i] = pf.pid; seatNick[i] = nick;
         if (!back) { p.ch = pf.ch; if (pf.co != null && !m.players.some((q) => q !== p && q.co === pf.co)) p.co = pf.co; }
         sendLooks(); toast(`${p.name} ${back ? '回到比賽' : '加入比賽'}`); }
       toPeer(from, { t: 'start', cfg: netCfg(), seat: i, mid: 1, snap: snapshot(true) });
@@ -706,7 +708,7 @@ function hostHandle(from, d) {
     const i = seatIds.indexOf(from); if (!m || i < 0) return; const p = m.players[i]; if (p.ctrl !== 'remote') return;
     const prev = remoteIn[from] || {}; remoteIn[from] = d;
     p.in.mx = +d.mx || 0; p.in.my = +d.my || 0; p.in.aim = +d.aim || 0; p.in.aimOn = !!d.ao;
-    if (prev.s !== undefined && d.s !== prev.s) { p.in.shot = ['drive', 'dink', 'lob'].includes(d.sh) ? d.sh : 'drive'; p.in.shotT = m.t; }
+    if (prev.s !== undefined && d.s !== prev.s) { p.in.shot = ['drive', 'dink', 'lob', 'smash'].includes(d.sh) ? d.sh : 'drive'; p.in.shotT = m.t; }
     if (d.pt === m.point && Number.isFinite(d.x) && Number.isFinite(d.y)) { p.vx = (d.x - p.x) * 30; p.vy = (d.y - p.y) * 30; p.x = d.x; p.y = d.y; PB.clampPlayer(m, p); }
   }
 }
@@ -716,7 +718,7 @@ function hostStart() {
   audio(); const n = room.mode * 2; seatIds = []; const seats = [];
   const RS = roomSeats(), L = assignLooks(RS);
   seatPid = []; seatNick = [];
-  for (let i = 0; i < n; i++) { const p = roster.find((q) => q.c === i); seatIds[i] = p ? p.id : null; seatPid[i] = p ? (p.id === myId ? myPid : (prefs[p.id] || {}).pid || '') : ''; seatNick[i] = p ? p.n : ''; seats.push(p ? { name: p.n, ctrl: p.id === myId ? 'local' : 'remote', ch: L[i].ch, co: L[i].co } : { name: CHARS[L[i].ch].n + '（電腦）', ctrl: 'ai', ch: L[i].ch, co: L[i].co }); }
+  for (let i = 0; i < n; i++) { const p = roster.find((q) => q.c === i); seatIds[i] = p ? p.id : null; seatPid[i] = p ? (p.id === myId ? myPid : (prefs[p.id] || {}).pid || '') : ''; seatNick[i] = p ? p.n : ''; seats.push(p ? { name: p.dn || p.n, ctrl: p.id === myId ? 'local' : 'remote', ch: L[i].ch, co: L[i].co } : { name: CHARS[L[i].ch].n + '（電腦）', ctrl: 'ai', ch: L[i].ch, co: L[i].co }); }
   const me = seatIds.indexOf(myId); mySeat = me; role = 'host';
   if (me < 0) toast('你坐在單打不使用的座位，本局觀戰（主持）');
   R = me >= 0 && teamOf(me) === 1 ? -1 : 1; layer = null;

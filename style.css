@@ -223,3 +223,27 @@ body.forced .seg button{padding:4px 9px}
 body.forced .tm .sc{font-size:15px}
 body.forced #call{font-size:17px}
 body.port #tip,body.port.touchui #tip{width:max-content;max-width:calc(100vw - 24px)}
+/* ===== v6: 殺球 button + all shot buttons ~12% bigger ===== */
+.joinbox input::placeholder{letter-spacing:0;font-size:13px}
+.joinbox input{padding-left:4px;padding-right:4px}
+#tbSmash{background:radial-gradient(circle at 35% 30%,#ff6bd5,#b41ea0)}
+/* portrait (tall): drive in the corner, dink left, lob above, smash on the diagonal */
+#btns{width:200px;height:200px}
+#tbDrive{right:0;bottom:0;width:108px;height:108px}
+#tbDink{right:114px;bottom:0;width:86px;height:86px}
+#tbLob{right:0;bottom:114px;width:86px;height:86px}
+#tbSmash{right:90px;bottom:90px;width:86px;height:86px}
+body.pshort #btns{width:174px;height:174px;bottom:calc(6px + env(safe-area-inset-bottom))}
+body.pshort #tbDrive{right:0;bottom:0;width:94px;height:94px}
+body.pshort #tbDink{right:100px;bottom:0;width:74px;height:74px}
+body.pshort #tbLob{right:0;bottom:100px;width:74px;height:74px}
+body.pshort #tbSmash{right:81px;bottom:81px;width:74px;height:74px}
+/* landscape: zig-zag column on the right (drive at the bottom) */
+body.land #btns{top:auto;width:150px;height:282px}
+body.land #tbDrive{right:0;bottom:0;width:101px;height:101px}
+body.land #tbDink{right:70px;bottom:84px;width:79px;height:79px}
+body.land #tbLob{right:10px;bottom:143px;width:79px;height:79px}
+body.land #tbSmash{right:70px;bottom:202px;width:79px;height:79px}
+@media (max-height:340px){body.land #btns{width:138px;height:240px}body.land #tbDrive{width:86px;height:86px}body.land #tbDink{right:61px;bottom:72px;width:68px;height:68px}body.land #tbLob{right:9px;bottom:122px;width:68px;height:68px}body.land #tbSmash{right:61px;bottom:172px;width:68px;height:68px}}
+.tb small{font-size:9px}
+@media (max-width:340px){body.pshort #btns{right:calc(4px + env(safe-area-inset-right))}body.pshort #joyBase{left:74px}}

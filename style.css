@@ -247,3 +247,7 @@ body.land #tbSmash{right:70px;bottom:202px;width:79px;height:79px}
 @media (max-height:340px){body.land #btns{width:138px;height:240px}body.land #tbDrive{width:86px;height:86px}body.land #tbDink{right:61px;bottom:72px;width:68px;height:68px}body.land #tbLob{right:9px;bottom:122px;width:68px;height:68px}body.land #tbSmash{right:61px;bottom:172px;width:68px;height:68px}}
 .tb small{font-size:9px}
 @media (max-width:340px){body.pshort #btns{right:calc(4px + env(safe-area-inset-right))}body.pshort #joyBase{left:74px}}
+/* ===== v7: 殺球 dims to 「抽」 when the incoming ball is too low ===== */
+#tbSmash.low{filter:grayscale(.85) brightness(.75);opacity:.62;border-style:dashed}
+#tbSmash.low b{font-size:17px}
+#tbSmash.low small{opacity:.95;color:#ffd0d0}

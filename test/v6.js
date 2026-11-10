@@ -30,7 +30,7 @@ const setVis = (p, hidden) => p.evaluate((h) => { Object.defineProperty(document
         const r = a.width / 2, cx = a.left + r, cy = a.top + r; for (let k = 0; k < 12; k++) { const t = k / 12 * Math.PI * 2; if (inPoly(cx + Math.cos(t) * r * 0.92, cy + Math.sin(t) * r * 0.92)) { onCourt.push(ids[i]); break; } } }
       return { d: R.tbDrive.width, s: Math.min(R.tbDink.width, R.tbLob.width, R.tbSmash.width), ov, out, onCourt: [...new Set(onCourt)], smash: document.querySelector('#tbSmash b').innerText }; });
     const base = V5[kind], kd = g.d / base.drive, ks = g.s / base.small;
-    ok(g.smash === '殺球' && kd >= 1.09 && kd <= 1.17 && ks >= 1.09 && ks <= 1.17, `[${tag}] 4 buttons incl. 殺球; drive ${g.d | 0}px (+${Math.round(kd * 100 - 100)}%), others ${g.s | 0}px (+${Math.round(ks * 100 - 100)}%)`);
+    ok((g.smash === '殺球' || g.smash === '抽') && kd >= 1.09 && kd <= 1.17 && ks >= 1.09 && ks <= 1.17, `[${tag}] 4 buttons incl. 殺球; drive ${g.d | 0}px (+${Math.round(kd * 100 - 100)}%), others ${g.s | 0}px (+${Math.round(ks * 100 - 100)}%)`);
     ok(!g.ov.length && !g.out.length, `[${tag}] buttons don't overlap each other or the joystick, all on screen ${g.ov.concat(g.out).join(',')}`);
     ok(!g.onCourt.length, `[${tag}] buttons stay off the court ${g.onCourt.join(',')}`);
     // tap 殺球 with a real touch where it is drawn

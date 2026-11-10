@@ -48,11 +48,13 @@ const DEV = [
     ok(g.on && g.n === 4 && g.out === 0 && g.cw >= g.W * 0.55, `[${d.tag}] court ${g.cw}px of ${g.W} fully visible, 4 buttons on screen`);
     if (d.shots) { await p.waitForTimeout(1500); await p.screenshot({ path: SHOT + `landscape_mode_play_2v2_${d.tag}.png` }); }
     // joystick drags in the sideways-held frame (app directions), sent as physical touches
+    // hold the point still (no serve / point reset while we steer), me in the middle of my half
+    const park = () => p.evaluate(() => { const m = __pb.m, q = m.players[__pb.seat]; m.phase = 'dead'; m.phaseT = -60; m.live = false; m.winner = -1; q.x = -3.6; q.y = 0; Object.assign(m.ball, { x: 5, y: 2.5, z: 0.04, vx: 0, vy: 0, vz: 0 }); });
     const me = () => p.evaluate(() => { const q = __pb.m.players[__pb.seat]; const s = __pb.proj(q.x, q.y, 0); return { sx: s[0], sy: s[1] }; });
     const jc = await p.evaluate(() => { const r = __pb.appRect(document.getElementById('joyBase')); return [r.left + r.width / 2, r.top + r.height / 2]; });
     const drag = async (dx, dy, ms) => { const [x0, y0] = await phys(jc[0], jc[1]); const [x1, y1] = await phys(jc[0] + dx, jc[1] + dy); await touch('touchStart', [[x0, y0]]); for (let i = 1; i <= 5; i++) { await touch('touchMove', [[x0 + (x1 - x0) * i / 5, y0 + (y1 - y0) * i / 5]]); await p.waitForTimeout(20); } await p.waitForTimeout(ms); await touch('touchEnd', []); await p.waitForTimeout(150); };
     for (const [dx, dy, name, chk] of [[0, -55, 'up', (a, c) => c.sy < a.sy - 8], [0, 55, 'down', (a, c) => c.sy > a.sy + 8], [55, 0, 'right', (a, c) => c.sx > a.sx + 4], [-55, 0, 'left', (a, c) => c.sx < a.sx - 4]]) {
-      const a = await me(); await drag(dx, dy, 550); const c = await me();
+      await park(); const a = await me(); await drag(dx, dy, 550); const c = await me();
       ok(chk(a, c), `[${d.tag}] joystick ${name} (as held sideways) moves the player ${name} on the landscape screen (${a.sx | 0},${a.sy | 0} -> ${c.sx | 0},${c.sy | 0})`);
     }
     const jr = await p.evaluate(() => { const r = __pb.appRect(document.getElementById('joyBase')), v = __pb.view; return r.left >= 0 && r.top >= 0 && r.right <= v.W && r.bottom <= v.H && r.width > 60; });
@@ -69,7 +71,7 @@ const DEV = [
     await p.setViewportSize({ width: d.h, height: d.w }); await p.waitForTimeout(600);
     v = await p.evaluate(() => ({ f: __pb.forced, W: __pb.view.W, H: __pb.view.H, cls: document.body.classList.contains('forced') }));
     ok(!v.f && !v.cls && v.W === d.h, `[${d.tag}] device actually landscape -> normal landscape, no CSS rotation (${v.W}x${v.H})`);
-    const a2 = await me(); { const jc2 = await p.evaluate(() => { const r = document.getElementById('joyBase').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }); await touch('touchStart', [[jc2[0], jc2[1]]]); for (let i = 1; i <= 5; i++) { await touch('touchMove', [[jc2[0], jc2[1] - 11 * i]]); await p.waitForTimeout(20); } await p.waitForTimeout(500); await touch('touchEnd', []); }
+    await park(); const a2 = await me(); { const jc2 = await p.evaluate(() => { const r = document.getElementById('joyBase').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }); await touch('touchStart', [[jc2[0], jc2[1]]]); for (let i = 1; i <= 5; i++) { await touch('touchMove', [[jc2[0], jc2[1] - 11 * i]]); await p.waitForTimeout(20); } await p.waitForTimeout(500); await touch('touchEnd', []); }
     const c2 = await me(); ok(c2.sy < a2.sy - 8, `[${d.tag}] unrotated landscape joystick up still moves up (${a2.sy | 0} -> ${c2.sy | 0})`);
     await p.setViewportSize({ width: d.w, height: d.h }); await p.waitForTimeout(600);
     ok(await p.evaluate(() => __pb.forced && __pb.state === 'play'), `[${d.tag}] back upright -> rotated again, match still running`);

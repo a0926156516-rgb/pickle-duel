@@ -131,4 +131,20 @@ function rallyShot(z, shot, seed) {
   f(); ok(m.score[0] === 11 && m.winner === -1, '11-10 is not a win (win by 2)');
   m.servingTeam = 0; m.server = 0; f(); ok(m.score[0] === 12 && m.winner === 0, '12-10 wins');
 }
+{ // v7: a fast ball that bounced in and runs off past the receiver is the receiver's miss (not the hitter's 出界)
+  const m = PB.createMatch({ mode: 1, seed: 5, seats: [{ ctrl: 'bot' }, { ctrl: 'bot' }], autoServe: 99 });
+  m.phase = 'rally'; m.live = true; m.hits = 5; m.bounces = 0; m.lastHitTeam = 0; m.lastHitter = 0; m.servingTeam = 0; m.server = 0;
+  m.players[1].x = 6; m.players[1].y = -2.5; Object.assign(m.ball, { x: 1, y: 2, z: 0.6, vx: 13, vy: 0, vz: -1 });
+  const evs = runUntil(m, (mm) => mm.phase !== 'rally', 3); ok(/兩次落地/.test(faultOf(evs)) && m.score[0] === 1, 'bounced-in smash that flies away = receiver misses, hitter scores: ' + faultOf(evs));
+}
+{ // v7: 殺球 on a low ball is risky (net / out), a high-ball 殺球 almost never misses
+  let lowErr = 0, hiErr = 0; const n = 200;
+  for (let k = 1; k <= n; k++) for (const [z, isLow] of [[0.4, 1], [1.4, 0]]) {
+    const m = PB.createMatch({ mode: 1, seed: k, seats: [{ ctrl: 'bot' }, { ctrl: 'bot' }], autoServe: 99 }); const p = m.players[0], o = m.players[1];
+    m.phase = 'rally'; m.live = true; m.hits = 4; m.bounces = isLow ? 1 : 0; m.lastHitTeam = 1; m.lastHitter = 1; o.x = 9; o.y = 3.6;
+    p.x = -4.5; p.y = 0; Object.assign(m.ball, { x: -4.3, y: 0, z, vx: -0.5, vy: 0, vz: 0.4 }); p.in.shot = 'smash'; p.in.shotT = m.t;
+    const evs = runUntil(m, (mm) => mm.phase !== 'rally' || (mm.lastHitTeam === 0 && mm.bounces === 1), 4);
+    const f = evs.find((e) => e.k === 'fault'); if (f && f.team === 0) { if (isLow) lowErr++; else hiErr++; } }
+  ok(lowErr / n >= 0.3 && hiErr / n <= 0.08, `low-ball 殺球 nets / sails out ${(100 * lowErr / n).toFixed(0)}% vs high-ball 殺球 ${(100 * hiErr / n).toFixed(0)}%`);
+}
 console.log(fails ? `\n${fails} RULE TEST(S) FAILED` : '\nALL RULE TESTS PASSED'); process.exit(fails ? 1 : 0);

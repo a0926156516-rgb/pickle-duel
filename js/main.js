@@ -280,7 +280,10 @@ function drawShadow(c, b) {
   c.fillStyle = `rgba(0,0,0,${a})`; c.beginPath(); c.ellipse(g[0], g[1], Math.max(4, s * 0.08 * BS), Math.max(2, s * 0.03 * BS), 0, 0, 7); c.fill();
 }
 function render(dt) {
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  let sx = 0, sy = 0;
+  if (juice.shake > 0) { juice.shake = Math.max(0, juice.shake - (dt || 0.016)); const a = juice.amp * Math.min(1, juice.shake / 0.2); sx = (Math.random() * 2 - 1) * a; sy = (Math.random() * 2 - 1) * a; }
+  if (!m) juice.shake = juice.flash = 0;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0); if (sx || sy) { ctx.clearRect(0, 0, W, H); ctx.setTransform(DPR, 0, 0, DPR, sx * DPR, sy * DPR); }
   if (!layer || layerR !== R || layerKey !== (PORT ? 'P' : 'L') + W + 'x' + H) buildLayer();
   if (PORT && m) { // smooth pan to keep the ball (and me) in frame
     const sp = PAN; PAN = 0; const bq = proj(m.ball.x, m.ball.y, 0), mp = m.players[mySeat], mq = mp ? proj(mp.x, mp.y, 0) : bq; PAN = sp;
@@ -320,6 +323,8 @@ function render(dt) {
   // the net is drawn under everything except objects on the far side of it that are low enough to be hidden by it
   drawNet(ctx); objs.forEach(draw); void farBall;
   if (m.phase === 'rally' || m.phase === 'dead') { trail.push({ ...bv }); if (trail.length > 12) trail.shift(); } else trail.length = 0;
+  if (juice.flash > 0) { ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.fillStyle = `rgba(255,240,250,${Math.min(0.32, juice.flash)})`; ctx.fillRect(0, 0, W, H); juice.flash = Math.max(0, juice.flash - (dt || 0.016) * 1.3); }
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   if (QS.get('fps') === '1') { ctx.fillStyle = '#fff'; ctx.font = '12px monospace'; ctx.textAlign = 'left'; const kb = $('keys'), jh = $('joyHint'), ky = touchUI ? (jh.offsetParent ? Math.min(H - 8, appRect(jh).top - 6) : H - 8) : kb.classList.contains('hide') ? H - 8 : Math.min(H - 8, appRect(kb).top - 6); ctx.fillText(fps.toFixed(0) + ' fps', 8, ky); fpsY = ky; }
 }
 
@@ -347,7 +352,8 @@ const SFX = {
   point: () => { tone(660, 0.14, 'sine', 0.25); tone(880, 0.22, 'sine', 0.25, null, 0.12); },
   side: () => { tone(520, 0.14, 'triangle', 0.22); tone(390, 0.22, 'triangle', 0.22, null, 0.12); },
   win: () => { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.3, 'triangle', 0.25, null, i * 0.13)); },
-  click: () => tone(700, 0.05, 'sine', 0.15)
+  click: () => tone(700, 0.05, 'sine', 0.15),
+  smash: () => { juice.sfx++; noise(0.09, 0.75, 3400); tone(1800, 0.05, 'square', 0.16, 320); tone(120, 0.24, 'sine', 0.6, 42); noise(0.28, 0.28, 800, 0.03); } // v7: crack + low boom + whoosh
 };
 $('bSound').onclick = () => { sound = !sound; try { localStorage.pbSound = sound ? '1' : '0'; } catch (_) {} $('bSound').textContent = sound ? '🔊' : '🔇'; audio(); };
 $('bSound').textContent = sound ? '🔊' : '🔇';
@@ -393,10 +399,32 @@ function placeMsg(force) {
 function showMsg(a, b, cls, dur) { const e = $('msg'); $('msgA').textContent = a; $('msgB').textContent = b || ''; e.className = cls || 'info'; void e.offsetWidth; e.style.animation = 'none'; void e.offsetWidth; e.style.animation = ''; clearTimeout(msgTimer); msgTimer = setTimeout(() => e.classList.add('hide'), dur || 1700); e.style.top = ''; e.style.left = ''; e.style.maxWidth = ''; placeMsg(true); }
 function toast(t) { const e = $('toast'); e.textContent = t; e.classList.remove('hide'); clearTimeout(toast.t); toast.t = setTimeout(() => e.classList.add('hide'), 2600); }
 const teamOf = (i) => i % 2;
+// ---- v7 smash: screen shake / flash, low-ball 殺球 warning ----
+const juice = { shake: 0, flash: 0, n: 0, sfx: 0, amp: 0 }; let lowTipT = 0, smashLowNow = false;
+const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+function smashJuice(ds) { juice.n++; juice.shake = ds ? 0.32 : 0.22; juice.amp = RM ? 0 : ds ? 7 : 4; juice.flash = ds ? 0.3 : 0.16; SFX.smash(); }
+// predicted height of the incoming ball where it reaches me (null when nothing is coming my way)
+function contactZ(me) {
+  if (!m || !me || m.phase !== 'rally' || !m.live || m.lastHitTeam === me.team) return null;
+  const b = { ...m.ball }, dt = 1 / 60, reach = C.REACH * 1.3; let bo = m.bounces, best = null, bd = 1e9;
+  for (let t = 0; t < 2.4; t += dt) {
+    b.vz -= C.G * dt; b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt;
+    if (b.z <= C.R && b.vz < 0) { b.z = C.R; b.vz = -b.vz * C.BOUNCE; b.vx *= C.FRIC; b.vy *= C.FRIC; if (++bo >= 2) break; }
+    if ((b.x < 0 ? 0 : 1) !== me.team || b.z < 0.06 || b.z > 2.4) continue;
+    const d = Math.hypot(b.x - me.x, b.y - me.y); if (d <= reach) return b.z; if (d < bd) { bd = d; best = b.z; }
+  }
+  return best;
+}
+function updSmashBtn() {
+  const me = m && state === 'play' && role !== 'spectator' ? m.players[mySeat] : null, z = contactZ(me), low = z != null && z < PB.SMASH_Z;
+  if (low === smashLowNow) return; smashLowNow = low;
+  const bt = $('tbSmash'); bt.classList.toggle('low', low); bt.querySelector('b').textContent = low ? '抽' : '殺球'; bt.querySelector('small').textContent = low ? '球太低' : 'SMASH';
+}
+function lowTip() { lowTipT = performance.now() + 1300; }
 function handleEvent(e) {
   if (!m) return;
   switch (e.k) {
-    case 'hit': hitCount[e.p] = (hitCount[e.p] || 0) + 1; SFX.hit(e.shot); if (e.p != null && m.players[e.p]) { m.players[e.p].swing = 1; m.players[e.p].swingShot = e.shot; } break;
+    case 'hit': hitCount[e.p] = (hitCount[e.p] || 0) + 1; if (e.shot === 'smash') smashJuice(e.ds); else SFX.hit(e.shot); if (e.low && e.p === mySeat) lowTip(); if (e.p != null && m.players[e.p]) { m.players[e.p].swing = 1; m.players[e.p].swingShot = e.shot; } break;
     case 'serve': SFX.hit('drive'); if (m.players[e.p]) { m.players[e.p].swing = 1; m.players[e.p].swingShot = 'serve'; } break;
     case 'bounce': if (!e.dead) SFX.bounce(); fx.push({ k: 'ring', x: e.x, y: e.y, t: 0, d: 0.9, out: PB.isOut(e.x, e.y) && !e.dead }); for (let n = 0; n < 9; n++) { const a = Math.random() * 7, sp = 0.6 + Math.random() * 1.2; fx.push({ k: 'puff', x: e.x, y: e.y, z: 0.03, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vz: 0.8 + Math.random() * 1.4, t: 0, d: 0.45 + Math.random() * 0.25 }); } break;
     case 'net': SFX.net(); break;
@@ -447,6 +475,7 @@ function updHUD() {
       else if (m.bounces === 0 && PB.inKitchen(me)) { t = '⚠ 你在廚房區，不能截擊！退後或等球落地'; warn = true; }
     }
   }
+  if (state === 'play' && performance.now() < lowTipT && !warn) { t = '球太低，改為抽球'; warn = true; }
   tip.textContent = t; tip.classList.toggle('hide', !t); tip.classList.toggle('warn', warn);
 }
 
@@ -464,6 +493,7 @@ addEventListener('keydown', (e) => {
 addEventListener('keyup', (e) => { keys[e.code] = false; });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
 function press(shot) {
+  if (shot === 'smash' && smashLowNow) lowTip();
   inp.shot = shot; inp.shotT = performance.now(); inp.seq++;
   document.querySelectorAll('.tb').forEach((b) => b.classList.toggle('sel', b.dataset.shot === shot));
   if (role === 'client') sendInput(true);
@@ -842,7 +872,7 @@ function frameBody(now) {
       for (const p of m.players) { if (p.ctrl === 'remote') { p.rp = p.rp ? { x: p.rp.x + (p.x - p.rp.x) * k, y: p.rp.y + (p.y - p.rp.y) * k } : { x: p.x, y: p.y }; } else p.rp = null; }
       const evs = m.events.splice(0); evs.forEach(handleEvent); if (role === 'host') { outbox.push(...evs); hostTick(dt); }
     } else clientTick(dt);
-    updHUD(); placeMsg(false); placeTip(); dimOverBall();
+    updSmashBtn(); updHUD(); placeMsg(false); placeTip(); dimOverBall();
   }
   try { render(dt); } catch (err) { layer = null; if (!frame.warned) { frame.warned = 1; console.warn('render recovered', err && err.message); } }
 }
@@ -850,5 +880,5 @@ resize();
 function loop(now) { frame(now); requestAnimationFrame(loop); }
 requestAnimationFrame(loop);
 // test hooks
-window.__pb = { looks: () => ({ room, prefs, rs: roomSeats() }), get m() { return m; }, proj, get view() { return { W, H, F, touchUI, port: PORT, pan: PAN, safe: safeRect(), ballR: lastBallR, tags: lastTags, hud: hudBlock, fpsY }; }, showMsg, get state() { return state; }, get role() { return role; }, get room() { return roomCode; }, get roster() { return roster; }, get net() { return net; }, get fps() { return fps; }, get seat() { return mySeat; }, get forced() { return FORCED; }, appRect, appXY, get orient() { return opt.orient; }, hitCount, startLocal, press };
+window.__pb = { looks: () => ({ room, prefs, rs: roomSeats() }), get m() { return m; }, proj, get view() { return { W, H, F, touchUI, port: PORT, pan: PAN, safe: safeRect(), ballR: lastBallR, tags: lastTags, hud: hudBlock, fpsY }; }, showMsg, get state() { return state; }, get role() { return role; }, get room() { return roomCode; }, get roster() { return roster; }, get net() { return net; }, get fps() { return fps; }, get seat() { return mySeat; }, get forced() { return FORCED; }, appRect, appXY, get orient() { return opt.orient; }, hitCount, startLocal, press, juice, get smashLow() { return smashLowNow; }, contactZ: () => contactZ(m && m.players[mySeat]), get lowTipT() { return lowTipT; } };
 })();

@@ -12,11 +12,14 @@ const C = {
 };
 C.G = 9.81 * C.PACE * C.PACE;
 const DIFF = {
-  easy:   { sig: 0.55, err: 0.09,  speed: 4.3, react: 0.32, skill: 0.45, drive: 10.5, drop: 0.25, tire: 14 },
-  normal: { sig: 0.38, err: 0.05,  speed: 4.9, react: 0.2,  skill: 0.7,  drive: 12,   drop: 0.45, tire: 10 },
-  hard:   { sig: 0.25, err: 0.022, speed: 5.4, react: 0.12, skill: 0.9,  drive: 13.5, drop: 0.6, tire: 6 }
+  easy:   { sig: 0.55, err: 0.09,  speed: 4.3, react: 0.32, skill: 0.45, drive: 10.5, drop: 0.25, tire: 14, smash: 0.2,  sm: { miss: 0.36, err: 0.30, weak: 0.22 } },
+  normal: { sig: 0.38, err: 0.05,  speed: 4.9, react: 0.2,  skill: 0.7,  drive: 12,   drop: 0.45, tire: 10, smash: 0.45, sm: { miss: 0.24, err: 0.20, weak: 0.26 } },
+  hard:   { sig: 0.25, err: 0.022, speed: 5.4, react: 0.12, skill: 0.9,  drive: 13.5, drop: 0.6, tire: 6,  smash: 0.7,  sm: { miss: 0.13, err: 0.15, weak: 0.28 } }
 };
+// v7 smash balance: smash = chance to actively 殺球 a high ball; sm = how a CPU copes with a well-placed smash coming at it
+// (miss: can't get the racket on it, err: mis-hits it into the net / out, weak: pops up a short, high ball). Scaled by the smash's quality.
 const HUMAN = { sig: 0.2, err: 0.012 };
+const SMASH_Z = 0.9, SM_LUNGE = +(typeof process !== 'undefined' && process.env && process.env.LUNGE) || 1.6; // 殺球 needs the ball at shoulder height or above
 const HUMAN_REACH = { easy: 1.45, normal: 1.3, hard: 1.08 }; // auto-swing radius multiplier for human players (beginner friendly)
 const teamSign = (t) => (t === 0 ? -1 : 1);
 const sideSign = (t, s) => (t === 0 ? (s === 'R' ? -1 : 1) : (s === 'R' ? 1 : -1));
@@ -93,7 +96,7 @@ function setupPoint(m, first) {
   }
   const pos = formation(m);
   for (const p of m.players) { p.x = pos[p.i].x; p.y = pos[p.i].y; p.vx = p.vy = 0; p.swing = 0; p.volleyT = -9; p.face = p.team === 0 ? 1 : -1; p.ai.leave = -1; p.ai.serveAt = 0.9 + m.r() * 0.8; }
-  m.phase = 'serve'; m.phaseT = 0; m.hits = 0; m.bounces = 0; m.lastHitTeam = -1; m.lastHitter = -1; m.live = false; m.rally = 0;
+  m.phase = 'serve'; m.phaseT = 0; m.hits = 0; m.bounces = 0; m.lastHitTeam = -1; m.lastHitter = -1; m.live = false; m.rally = 0; m.smFate = null;
   m.point++; m.pred = null; holdBall(m);
   ev(m, { k: 'call', text: callText(m), server: m.server, first: !!first });
 }
@@ -143,23 +146,51 @@ function makeShot(m, p, shot, aimY, aiTarget) {
   if (shot === 'drive' && b.z > 1.35 && Math.abs(p.x) < 5.2) kind = 'smash';
   // 殺球 button (v6): a ball at shoulder height or above (z ≥ 0.9 m) is smashed down hard; a lower ball can't be hit downward,
   // so it becomes a flat power drive (20% faster than a drive) that is harder to control.
-  if (shot === 'smash') { if (b.z >= 0.9) { kind = 'smash'; sig *= 1.1; } else { kind = 'drive'; power = 1.25; sig *= 1.35; perr *= 2; } }
-  if (kind === 'smash') { tx = xs * (3.6 + r() * 2.2); const sp = shot === 'smash' ? 18.5 : 17; // a deliberate 殺球 is hit a bit harder than the automatic overhead
+  // v7: a 殺球 on a ball below 0.9 m can't be hit down — it is a flat, overhit power drive with a big net / out risk
+  let low = false;
+  if (shot === 'smash') { if (b.z >= SMASH_Z) { kind = 'smash'; sig *= 1.05; } else { kind = 'drive'; low = true; power = 1.3; sig *= 1.6; perr = Math.max(perr * 4, 0.3) + (SMASH_Z - b.z) * 0.35; } }
+  p.lowSmash = low;
+  // the receiving CPU's fate against this shot (set by an earlier deliberate smash): err = mis-hit, weak = short pop-up
+  const fate = m.smFate && m.smFate.rally === m.rally && m.smFate.team === p.team && !human ? m.smFate.f : null;
+  if (fate === 'err') perr = 1;
+  if (kind === 'smash') {
+    if (shot === 'smash') { // deliberate 殺球 (v7): aimed deep and toward the open sideline
+      const opp = m.players.filter((q) => q.team === o);
+      if (aiTarget && aiTarget.y != null) ty = clamp(aiTarget.y, -1.9, 1.9) * (human ? 1.15 : 1);
+      else if (!(human && Math.abs(aimY) > 0.2)) { let bs = -1; for (const y of [-2.3, 2.3]) { const d = Math.min(...opp.map((q) => Math.abs(q.y - y))); if (d > bs) { bs = d; ty = y * (human ? 1 : 0.82); } } }
+      tx = xs * (4.9 + r() * 1.25);
+    } else tx = xs * (3.6 + r() * 2.2);
+    const sp = shot === 'smash' ? 18.5 : 17; // a deliberate 殺球 is hit a bit harder than the automatic overhead
     T = Math.hypot(tx - from.x, ty - from.y) / sp; clr = 0.04; }
-  else if (kind === 'drive') { tx = xs * (aiTarget && aiTarget.x ? aiTarget.x : 5.4 + r() * 0.7); const sp = (human ? 12.5 : D.drive) * power; T = Math.hypot(tx - from.x, ty - from.y) / sp; clr = power > 1 ? 0.07 : 0.1; }
+  else if (kind === 'drive') { tx = xs * (aiTarget && aiTarget.x ? aiTarget.x : 5.4 + r() * 0.7); const sp = (human ? 12.5 : D.drive) * power; T = Math.hypot(tx - from.x, ty - from.y) / sp; clr = low ? 0.02 : 0.1; }
   else if (kind === 'dink') { tx = xs * (1.05 + r() * 0.75); const d = Math.hypot(tx - from.x, ty - from.y); T = Math.max(0.75, d / 5.8); clr = 0.2; }
   else { kind = 'lob'; tx = xs * (5.5 + r() * 0.75); T = 1.5 + r() * 0.35; clr = 0.6; }
+  p.popUp = fate === 'weak';
+  if (fate === 'weak') { kind = 'lob'; tx = xs * (2.6 + r() * 1.4); ty = (r() - 0.5) * 2; T = 1.15 + r() * 0.25; clr = 0.5; sig *= 0.6; } // stabbed it back: a short, high sitter
   tx += gauss(r) * sig * (kind === 'dink' ? 0.45 : 0.75); ty += gauss(r) * sig;
   ty = clamp(ty, -C.HW - 1.2, C.HW + 1.2);
   let v = launch(from, tx, ty, T, clr);
-  if (r() < perr) { // mis-hit
+  const mis = r() < perr;
+  if (mis) { // mis-hit
     const k = r();
-    if (k < 0.45) { v.vz *= 0.55; v.vx *= 0.9; }           // into the net
-    else if (k < 0.75) { v.vx *= 1.22; v.vy *= 1.1; }       // long
+    if (fate === 'err') { // a CPU rushed by a smash frames it: into the net, or flying long
+      if (k < 0.5) { v.vz = -0.6; v.vx *= 0.8; } else { const lx = xs * (C.HL + 0.7 + r() * 1.6); v = launch(from, lx, ty, Math.hypot(lx - from.x, ty - from.y) / 11, 0.3); } }
+    else if (k < (low ? 0.5 : 0.45)) { v.vz *= 0.55; v.vx *= 0.9; }           // into the net
+    else if (k < (low ? 0.9 : 0.75)) { v.vx *= low ? 1.4 : 1.22; v.vy *= 1.1; if (low) v.vz += 0.8; }       // long (an overhit low 殺球 sails)
     else { v.vy += (r() < 0.5 ? -1 : 1) * 2.5 * C.PACE; }          // wide
   }
   b.vx = v.vx; b.vy = v.vy; b.vz = v.vz; b.z = from.z;
   p.swing = 1; p.swingShot = kind;
+  m.smFate = null;
+  if (kind === 'smash' && shot === 'smash') { // decide how the CPU on the other side copes with this smash
+    const opp = m.players.filter((q) => q.team === o), Dr = DIFF[m.diff].sm;
+    const hq = 0.6 + 0.4 * clamp((b.z - SMASH_Z) / 0.9, 0, 1);                       // the higher the contact, the steeper and harder
+    const away = Math.min(...opp.map((q) => Math.hypot(q.x - tx, q.y - ty)));       // placed away from the receiver(s)
+    const q = hq * clamp(0.45 + away / 4, 0.5, 1) * (mis ? 0 : 1);
+    const u = r(); let f = 'ok';
+    if (opp.some((q2) => q2.ctrl === 'ai')) { if (u < Dr.miss * q) f = 'miss'; else if (u < (Dr.miss + Dr.err) * q) f = 'err'; else if (u < (Dr.miss + Dr.err + Dr.weak) * q) f = 'weak'; }
+    m.smFate = { rally: m.rally + 1, team: o, f, q };
+  }
   return kind;
 }
 
@@ -207,7 +238,8 @@ function canReach(m, p) {
   if (!m.live || m.lastHitTeam === p.team) return false;
   if ((b.x < 0 ? 0 : 1) !== p.team) return false;
   if (b.z < 0.06 || b.z > 2.4) return false;
-  const reach = C.REACH * (b.z > 1.7 ? 0.8 : 1) * (p.ctrl === 'ai' ? 1 : (HUMAN_REACH[m.diff] || 1));
+  const f = m.smFate, lunge = p.ctrl === 'ai' && f && f.rally === m.rally && f.team === p.team && f.f !== 'miss' ? SM_LUNGE : 1; // v7: a CPU that reads the smash lunges for it
+  const reach = C.REACH * lunge * (b.z > 1.7 ? 0.8 : 1) * (p.ctrl === 'ai' ? 1 : (HUMAN_REACH[m.diff] || 1));
   return Math.hypot(b.x - p.x, b.y - p.y) <= reach;
 }
 // returns null if legal, else a fault reason
@@ -225,7 +257,7 @@ function doHit(m, p, shot, aimY, aiTarget) {
   if (m.bounces === 0) p.volleyT = m.t;
   const kind = makeShot(m, p, shot, aimY, aiTarget);
   m.hits++; m.rally++; m.bounces = 0; m.lastHitTeam = p.team; m.lastHitter = p.i; m.pred = null;
-  ev(m, { k: 'hit', p: p.i, shot: kind, volley: p.volleyT === m.t });
+  ev(m, { k: 'hit', p: p.i, shot: kind, volley: p.volleyT === m.t, low: p.lowSmash ? 1 : 0, ds: shot === 'smash' && kind === 'smash' ? 1 : 0, pop: p.popUp ? 1 : 0 });
 }
 function doServe(m, shot, aimY) {
   const p = m.players[m.server], r = m.r, rt = 1 - m.servingTeam, human = p.ctrl !== 'ai';
@@ -293,7 +325,7 @@ function aiThink(m, p, dt) {
     else { const mate = partner(m, p); const lo = p.y < mate.y || (p.y === mate.y && p.i < mate.i); ty = (lo ? -1.45 : 1.45) + clamp(b.y * 0.3, -0.8, 0.8); }
     if (m.live && m.lastHitTeam === o) {
       if (!m.pred) m.pred = predict(m);
-      if (a.ver !== m.rally) { a.ver = m.rally; a.react = m.t + D.react * (0.7 + m.r() * 0.6); a.leave = -1;
+      if (a.ver !== m.rally) { a.ver = m.rally; a.react = m.t + D.react * (0.7 + m.r() * 0.6) * (m.smFate && m.smFate.rally === m.rally && m.smFate.f !== 'miss' ? 0.3 : 1); a.leave = -1; // reads a smash early unless beaten by it
         const fb = m.pred.firstBounce; if (fb && m.bounces === 0 && isOut(fb.x, fb.y) && (fb.x < 0 ? 0 : 1) === p.team && m.r() < D.skill) a.leave = m.rally; }
       if (m.t < a.react) { tx = a.tx; ty = a.ty; }
       else {
@@ -336,6 +368,7 @@ function aiShot(m, p) {
   let shot;
   if (idx === 2) shot = r() < 0.1 ? 'lob' : 'drive';
   else if (idx === 3) shot = r() < D.drop ? 'dink' : r() < 0.08 ? 'lob' : 'drive';
+  else if (b.z >= SMASH_Z + 0.15 && Math.abs(p.x) < 5.4 && r() < D.smash * (b.z > 1.4 ? 1.4 : 1)) shot = 'smash'; // v7: CPU actively smashes high balls (more often on harder levels)
   else if (b.z > 1.4 && Math.abs(p.x) < 5) shot = 'drive';
   else if (oppNet && Math.abs(p.x) < 3.3 && b.z > 0.95 && r() < D.skill) shot = 'drive'; // attack a high dink
   else if (oppNet && Math.abs(p.x) < 3.3) { const k = r(); shot = k < 0.68 ? 'dink' : k < 0.9 ? 'drive' : 'lob'; }
@@ -396,6 +429,7 @@ function sub(m, dt) {
       if (!canReach(m, p)) continue;
       if (p.ctrl === 'ai') {
         if (p.ai.leave === m.rally) continue;
+        if (m.smFate && m.smFate.f === 'miss' && m.smFate.rally === m.rally && m.smFate.team === p.team) continue; // beaten by the smash: lunges but can't get a racket on it
         if (m.mode === 2 && m.hits === 1 && p.i !== m.receiver) continue;
         if (illegal(m, p)) continue;
         const s = aiShot(m, p); doHit(m, p, s.shot, 0, s.target); break;
@@ -407,7 +441,8 @@ function sub(m, dt) {
       }
     }
     // safety: ball far away & slow
-    if (m.live && Math.abs(b.x) > 16) fault(m, m.lastHitTeam, '出界！', m.lastHitter);
+    // (v7 fix: a ball that already bounced in and is running away — e.g. a fast smash past a beaten receiver — is the receiver's miss, not the hitter's out)
+    if (m.live && Math.abs(b.x) > 16) { if (m.bounces >= 1) fault(m, b.x < 0 ? 0 : 1, '兩次落地（沒接到）', -1); else fault(m, m.lastHitTeam, '出界！', m.lastHitter); }
   }
   if (m.phase === 'dead') {
     if (b.z <= C.R + 0.001) { b.vx *= 0.96; b.vy *= 0.96; }
@@ -415,6 +450,6 @@ function sub(m, dt) {
   }
 }
 
-const API = { C, DIFF, TEAM_NAME, createMatch, step, setupPoint, callText, movePlayer, clampPlayer, teamSign, sideSign, netH, inKitchen, isOut, predict, formation };
+const API = { C, DIFF, SMASH_Z, TEAM_NAME, createMatch, step, setupPoint, callText, movePlayer, clampPlayer, teamSign, sideSign, netH, inKitchen, isOut, predict, formation };
 if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.PB = API;
 })(typeof self !== 'undefined' ? self : this);

@@ -6,6 +6,12 @@
 - 線上連線沿用《攀岩》peak2d 的 WebSocket 中繼伺服器與協定（`create` / `join` / `msg`，房主權威）：預設 `wss://panjian-peak2d.onrender.com/ws`，可用 `?server=ws://host:port/ws` 改接。`server/relay.js` 是同協定的本機版（從 peak2d `server.js` 取出房間中繼部分），測試或自架用：`cd server && npm i && PORT=10000 npm start`。
 - 網址參數：`?room=1234` 帶入房號、`?auto=1` 自動駕駛（展示／測試）、`?fps=1` 顯示 FPS。
 
+## 畫面與角色（v2）
+- 橫向設計：球場橫放（左隊 vs 右隊、球網直立在中間），自己永遠在左邊；直式會顯示「請將手機橫放」，第一次點擊時嘗試 `screen.orientation.lock('landscape')`（不支援時改走全螢幕再鎖定）。旋轉、網址列伸縮、任何尺寸變動都會即時重排，畫面迴圈有錯誤保護不會停。
+- 角色沿用遊戲模組部門的 peak2d 角色表（`assets/`：阿岩 `male.png`、小攀 `female.png`，72×127 影格，idle／walk）。顏色由 mask 在執行時上色（紅／藍／綠／黃），選單可選角色與顏色並即時預覽。揮拍動作是程式合成（手臂＋球拍旋轉、擠壓），未新增美術。
+- 顏色分配：玩家保留自己的顏色（撞色時改給空的顏色），電腦補位用剩下的顏色與另一個角色；隊名取隊長顏色（例如「藍隊」）；線上房間的座位預覽、比賽中的顏色與隊名在所有人畫面一致。
+- 新手提示（簡單／普通）：對方回球時在預測落點畫黃色光圈。
+
 ## 規則
 低手對角發球、發球不可落廚房區（含線）、兩跳規則、廚房區（非截擊區）截擊犯規與截擊後衝入廚房、出界、掛網、兩次落地；只有發球方得分，11 分領先 2 分（可選 7／15 分）；雙打報分「發球方-接發球方-發球員號碼」，開局 0-0-2，得分時發球員與隊友換邊。
 
@@ -14,4 +20,4 @@
 - 電腦：WASD／方向鍵移動，J／空白 抽球、K 吊小球、L 高吊，Esc 選單。
 
 ## 測試（`test/`）
-`npm i` 後：`node sim.js`（電腦對電腦整場模擬、計分不變量）、`node rules.js`（規則情境單元測試）、`node local.js` / `node net.js` / `node final.js`（Playwright 截圖、2 人與 4 人線上房間）。需先啟動 `python3 -m http.server 8077`（專案根目錄）與 `PORT=10077 node server/relay.js`。
+`npm i` 後：`node sim.js`（電腦對電腦整場模擬、計分不變量）、`node rules.js`（規則情境單元測試）、`node local.js` / `node net.js` / `node final.js`（Playwright 截圖、2 人與 4 人線上房間）、`node land.js`（5 種手機橫向模擬：觸控、DPR 3、直→橫旋轉、比賽中旋轉、網址列伸縮）、`node looks.js`（線上角色／顏色同步）、`node fault.js`（觸控發球失誤顯示原因）、`node swing.js`（揮拍截圖）。需先啟動 `python3 -m http.server 8077`（專案根目錄）與 `PORT=10077 node server/relay.js`。

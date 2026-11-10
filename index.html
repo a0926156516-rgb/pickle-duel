@@ -42,11 +42,16 @@
   <div class="card">
     <div class="logo"><span class="ballico"></span><h1>匹克球對決</h1><span class="en">PICKLE DUEL</span></div>
     <label class="row">暱稱 <input id="nick" maxlength="8" placeholder="輸入暱稱" autocomplete="off"></label>
-    <div class="row opts">
-      <span>電腦難度</span>
-      <div class="seg" id="segDiff"><button data-v="easy">簡單</button><button data-v="normal" class="sel">普通</button><button data-v="hard">困難</button></div>
-      <span>局分</span>
-      <div class="seg" id="segTarget"><button data-v="7">7 分</button><button data-v="11" class="sel">11 分</button><button data-v="15">15 分</button></div>
+    <div class="row look">
+      <canvas id="lookPrev" width="56" height="98" aria-hidden="true"></canvas>
+      <div class="lookopts">
+        <div class="row opts"><span>角色</span><div class="seg" id="segChar"><button data-v="0" class="sel">阿岩</button><button data-v="1">小攀</button></div>
+        <span>顏色</span><div class="seg sw" id="segCol"><button data-v="0" aria-label="紅">紅</button><button data-v="1" class="sel" aria-label="藍">藍</button><button data-v="2" aria-label="綠">綠</button><button data-v="3" aria-label="黃">黃</button></div><span id="lookName" class="lookname"></span></div>
+        <div class="row opts" id="menuOpts"><span id="optCore" class="optcore"><span>電腦難度</span>
+          <div class="seg" id="segDiff"><button data-v="easy">簡單</button><button data-v="normal" class="sel">普通</button><button data-v="hard">困難</button></div>
+          <span>局分</span>
+          <div class="seg" id="segTarget"><button data-v="7">7 分</button><button data-v="11" class="sel">11 分</button><button data-v="15">15 分</button></div></span></div>
+      </div>
     </div>
     <h2>單機練習（電腦補位）</h2>
     <div class="row two">
@@ -68,8 +73,6 @@
     <div class="rhead"><div>房號</div><div id="rcode" title="點一下複製">----</div><button id="bCopy" class="link">複製邀請連結</button></div>
     <div class="row opts" id="roomOpts">
       <span>模式</span><div class="seg" id="segMode"><button data-v="1">單打 1v1</button><button data-v="2" class="sel">雙打 2v2</button></div>
-      <span>電腦</span><div class="seg" id="segDiff2"><button data-v="easy">簡單</button><button data-v="normal" class="sel">普通</button><button data-v="hard">困難</button></div>
-      <span>局分</span><div class="seg" id="segTarget2"><button data-v="7">7</button><button data-v="11" class="sel">11</button><button data-v="15">15</button></div>
     </div>
     <div id="seats"></div>
     <div class="row small" id="roomNote">點選座位換位置；空位由電腦補上。</div>

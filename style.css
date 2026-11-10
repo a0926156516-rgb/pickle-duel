@@ -99,3 +99,17 @@ body.land #tbLob{right:12px;bottom:184px;width:72px;height:72px}
 @media (max-height:340px){body.land #tbDrive{width:80px;height:80px}body.land #tbDink{bottom:88px;width:62px;height:62px}body.land #tbLob{bottom:158px;width:62px;height:62px}}
 body.land.touchui #tip{top:auto;bottom:calc(8px + env(safe-area-inset-bottom))}
 #rot b{color:#ffe14d}
+
+/* character / colour picker */
+.row.look{flex-wrap:nowrap;align-items:center;gap:12px}
+#lookPrev{flex:none;width:56px;height:98px;background:radial-gradient(ellipse at 50% 92%,rgba(0,0,0,.35),rgba(0,0,0,0) 60%),rgba(255,255,255,.06);border-radius:12px}
+.lookopts{flex:1;min-width:0}.lookopts .row{margin:4px 0}
+.optcore{display:contents}
+.seg.sw button{width:34px;color:#fff;text-shadow:0 1px 2px #000;background:var(--c);margin:0 2px;opacity:.55}
+.seg.sw button.sel{opacity:1;color:#fff;outline:3px solid #ffe14d;outline-offset:-1px}
+.lookname{font-weight:800;color:#ffe14d}
+.seat .cn{font-size:11px;opacity:.8;background:rgba(255,255,255,.12);padding:1px 6px;border-radius:8px}
+/* big call / fault message: a pill over the court centre (not over the stand ads), drawn above nameplates */
+#msg{top:46%;background:rgba(8,16,34,.78);padding:6px 18px 8px;border-radius:16px;box-shadow:0 6px 20px rgba(0,0,0,.35)}
+#msgA{font-size:clamp(20px,4.2vw,40px)}
+@media (max-height:430px){#msgA{font-size:24px}#msgB{font-size:15px}#lookPrev{width:44px;height:77px}}

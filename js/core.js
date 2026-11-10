@@ -10,11 +10,12 @@ const C = {
   SPEED: 5.3, DT: 1 / 120
 };
 const DIFF = {
-  easy:   { sig: 0.55, err: 0.09,  speed: 4.3, react: 0.32, skill: 0.45, drive: 10.5, drop: 0.25 },
-  normal: { sig: 0.38, err: 0.05,  speed: 4.9, react: 0.2,  skill: 0.7,  drive: 12,   drop: 0.45 },
-  hard:   { sig: 0.25, err: 0.022, speed: 5.4, react: 0.12, skill: 0.9,  drive: 13.5, drop: 0.6 }
+  easy:   { sig: 0.55, err: 0.09,  speed: 4.3, react: 0.32, skill: 0.45, drive: 10.5, drop: 0.25, tire: 14 },
+  normal: { sig: 0.38, err: 0.05,  speed: 4.9, react: 0.2,  skill: 0.7,  drive: 12,   drop: 0.45, tire: 10 },
+  hard:   { sig: 0.25, err: 0.022, speed: 5.4, react: 0.12, skill: 0.9,  drive: 13.5, drop: 0.6, tire: 6 }
 };
 const HUMAN = { sig: 0.2, err: 0.012 };
+const HUMAN_REACH = { easy: 1.45, normal: 1.3, hard: 1.08 }; // auto-swing radius multiplier for human players (beginner friendly)
 const teamSign = (t) => (t === 0 ? -1 : 1);
 const sideSign = (t, s) => (t === 0 ? (s === 'R' ? -1 : 1) : (s === 'R' ? 1 : -1));
 const netH = (y) => C.NET_C + (C.NET_S - C.NET_C) * Math.min(1, Math.abs(y) / C.HW);
@@ -29,7 +30,7 @@ function createMatch(cfg) {
   const mode = cfg.mode === 2 ? 2 : 1;
   const n = mode * 2;
   const m = {
-    cfg, mode, target: cfg.target || 11, diff: DIFF[cfg.diff] ? cfg.diff : 'normal',
+    cfg, mode, target: cfg.target || 11, teamNames: (cfg.teamNames && cfg.teamNames.length === 2) ? cfg.teamNames.slice() : TEAM_NAME.slice(), diff: DIFF[cfg.diff] ? cfg.diff : 'normal',
     r: rng(cfg.seed || (Math.random() * 1e9) | 0),
     t: 0, players: [], score: [0, 0], servingTeam: cfg.firstServe === 1 ? 1 : 0,
     serverNum: mode === 2 ? 2 : 1, server: 0, receiver: 1, sides: [],
@@ -40,7 +41,7 @@ function createMatch(cfg) {
   for (let i = 0; i < n; i++) {
     const s = (cfg.seats && cfg.seats[i]) || {};
     m.players.push({
-      i, team: i % 2, name: s.name || (s.ctrl === 'ai' || !s.ctrl ? '電腦' : '玩家'), color: s.color != null ? s.color : i,
+      i, team: i % 2, name: s.name || (s.ctrl === 'ai' || !s.ctrl ? '電腦' : '玩家'), color: s.co != null ? s.co : s.color != null ? s.color : i, co: s.co != null ? s.co : i % 4, ch: s.ch === 1 ? 1 : 0,
       ctrl: s.ctrl || 'ai', x: 0, y: 0, vx: 0, vy: 0, face: i % 2 === 0 ? 1 : -1, swing: 0, swingShot: 'drive', volleyT: -9,
       in: { mx: 0, my: 0, shot: 'drive', shotT: -9, aim: 0, aimOn: false },
       ai: { tx: 0, ty: 0, react: 0, ver: -1, leave: -1, serveAt: 0, resp: false }
@@ -130,9 +131,9 @@ function makeShot(m, p, shot, aimY, aiTarget) {
   const D = DIFF[m.diff], o = 1 - p.team, xs = teamSign(o), b = m.ball, r = m.r;
   const dist = Math.hypot(b.x - p.x, b.y - p.y);
   const stretch = clamp(dist / C.REACH, 0, 1.2);
-  const tire = 1 + m.rally / 14; // long rallies get harder to sustain
+  const tire = 1 + m.rally / (human ? 14 : D.tire * (m.mode === 2 ? 0.8 : 1)); // long rallies get harder to sustain (CPU tires faster on hard/doubles so points don't drag)
   const sig = (human ? HUMAN.sig : D.sig) * (0.7 + 0.6 * stretch) * (b.z < 0.25 ? 1.25 : 1) * Math.sqrt(tire);
-  const perr = (human ? HUMAN.err : D.err) * (human ? 1 : tire);
+  const perr = (human ? HUMAN.err : D.err) * (human ? 1 : Math.pow(tire, 1.7));
   const from = { x: b.x, y: b.y, z: Math.max(b.z, 0.12) };
   let tx, ty, T, clr = 0.12;
   if (aiTarget && aiTarget.y != null) ty = aiTarget.y; else if (human && Math.abs(aimY) > 0.2) ty = aimY * 2.5; else ty = -p.y * 0.45;
@@ -169,7 +170,7 @@ function fault(m, team, reason, who) {
   } else {
     m.score[st]++;
     if (m.mode === 2) { const tp = teamPlayers(m, st); const a = m.sides[tp[0].i]; m.sides[tp[0].i] = m.sides[tp[1].i]; m.sides[tp[1].i] = a; }
-    out = { k: 'point', team: st, text: TEAM_NAME[st] + ' 得分！' };
+    out = { k: 'point', team: st, text: m.teamNames[st] + ' 得分！' };
   }
   ev(m, { k: 'fault', team, reason, who: who == null ? -1 : who });
   ev(m, out);
@@ -200,7 +201,7 @@ function canReach(m, p) {
   if (!m.live || m.lastHitTeam === p.team) return false;
   if ((b.x < 0 ? 0 : 1) !== p.team) return false;
   if (b.z < 0.06 || b.z > 2.4) return false;
-  const reach = C.REACH * (b.z > 1.7 ? 0.8 : 1);
+  const reach = C.REACH * (b.z > 1.7 ? 0.8 : 1) * (p.ctrl === 'ai' ? 1 : (HUMAN_REACH[m.diff] || 1));
   return Math.hypot(b.x - p.x, b.y - p.y) <= reach;
 }
 // returns null if legal, else a fault reason

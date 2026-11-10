@@ -8,6 +8,31 @@ const SEAT_COL = ['#2b7bff', '#ff4d5a', '#22c3e6', '#ff9b3d'];
 const TEAM_COL = ['#2b7bff', '#ff4d5a'];
 const TEAM_GRAD = ['linear-gradient(90deg,#1f5fd6,#2b7bff)', 'linear-gradient(90deg,#ff4d5a,#d6303e)'];
 const TEAM_NAME = PB.TEAM_NAME;
+// ---------- characters (遊戲模組部門 sprites: 阿岩 / 小攀, base + mask tinted at runtime) ----------
+const CHARS = [{ k: 'ayan', n: '阿岩', base: 'assets/male.png', mask: 'assets/male_mask.png' }, { k: 'xiaopan', n: '小攀', base: 'assets/female.png', mask: 'assets/female_mask.png' }];
+const COLS = ['#e8483b', '#2f8fe0', '#3fb85a', '#f2b630'], COLN = ['紅', '藍', '綠', '黃'];
+const COLD = ['#b8302a', '#1f6db5', '#2a8a43', '#c98e18'];
+const FW = 72, FH = 127, AX = 36, AY = 123, BODY = 107; // frame size, feet anchor, standing body height in px
+const IMG = CHARS.map((c) => { const o = { base: new Image(), mask: new Image(), ok: 0 }; o.base.onload = o.mask.onload = () => { o.ok++; }; o.base.src = c.base; o.mask.src = c.mask; return o; });
+const TINT = {};
+function sheet(ch, co) {
+  const key = ch + '_' + co; if (TINT[key]) return TINT[key]; const im = IMG[ch]; if (!im || im.ok < 2) return null;
+  const w = im.base.naturalWidth, h = im.base.naturalHeight; if (!w) return null;
+  const t = document.createElement('canvas'); t.width = w; t.height = h; const g = t.getContext('2d');
+  g.drawImage(im.base, 0, 0); g.globalCompositeOperation = 'multiply'; g.fillStyle = COLS[co]; g.fillRect(0, 0, w, h); g.globalCompositeOperation = 'destination-in'; g.drawImage(im.mask, 0, 0);
+  const o = document.createElement('canvas'); o.width = w; o.height = h; const q = o.getContext('2d'); q.drawImage(im.base, 0, 0); q.drawImage(t, 0, 0);
+  return (TINT[key] = o);
+}
+const teamGrad = (co) => `linear-gradient(90deg,${COLD[co]},${COLS[co]})`;
+// colour/character assignment: humans keep their pick when free, CPU fillers take the remaining colours and the other character
+function assignLooks(seats) {
+  const used = new Set(), L = [];
+  seats.forEach((s, i) => { if (s && s.ctrl !== 'ai' && s.co != null) { let c = +s.co; if (!(c >= 0 && c < 4) || used.has(c)) c = [0, 1, 2, 3].find((k) => !used.has(k)); used.add(c); L[i] = { ch: s.ch === 1 ? 1 : 0, co: c }; } });
+  seats.forEach((s, i) => { if (L[i]) return; const c = [0, 1, 2, 3].find((k) => !used.has(k)); used.add(c); const ref = L[i ^ 2] || L[i ^ 1] || L[0]; L[i] = { ch: ref ? 1 - ref.ch : i % 2, co: c }; });
+  return L;
+}
+const teamNamesOf = (L) => [COLN[L[0].co] + '隊', COLN[L[1].co] + '隊'];
+const myLook = () => ({ ch: opt.ch === 1 ? 1 : 0, co: opt.co >= 0 && opt.co < 4 ? opt.co : 1 });
 const SHOT_NAME = { drive: '抽球', dink: '吊小球', lob: '高吊', smash: '殺球', serve: '發球' };
 const DIFF_NAME = { easy: '簡單', normal: '普通', hard: '困難' };
 
@@ -16,7 +41,7 @@ let state = 'menu';        // menu | room | play | end
 let role = 'local';        // local | host | client
 let m = null;              // match (authoritative for local/host, a mirrored view for clients)
 let mySeat = 0, R = 1, paused = false;
-let opt = { diff: 'normal', target: 11, mode: 2 };
+let opt = { diff: 'normal', target: 11, mode: 2, ch: 0, co: 1 };
 try { Object.assign(opt, JSON.parse(localStorage.pbOpt || '{}')); } catch (_) {}
 const AUTO = QS.get('auto') === '1';   // autopilot for testing / demo
 let lastFrame = performance.now(), fps = 60, fpsAcc = 0, fpsN = 0;
@@ -146,45 +171,46 @@ function drawNet(c) {
 function rr(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
 function drawPlayer(c, p, me) {
   const pos = p.rp || p; const q = proj(pos.x, pos.y, 0), s = q[2], x = q[0], y = q[1];
-  const col = SEAT_COL[p.i], face = R * (p.team === 0 ? 1 : -1);
-  const spd = Math.hypot(p.vx || 0, p.vy || 0); p.walk = (p.walk || 0) + spd * 0.12;
-  const leg = Math.sin(p.walk) * Math.min(1, spd / 3) * 0.22;
-  // shadow
-  c.fillStyle = 'rgba(0,0,0,.28)'; c.beginPath(); c.ellipse(x, y, s * 0.38, s * 0.12, 0, 0, 7); c.fill();
-  if (me) { c.strokeStyle = '#ffe14d'; c.lineWidth = Math.max(2, s * 0.04); c.beginPath(); c.ellipse(x, y, s * 0.5, s * 0.17, 0, 0, 7); c.stroke(); }
-  const Y = (z) => y - z * s;
-  // legs
-  c.strokeStyle = '#2a2f3a'; c.lineCap = 'round'; c.lineWidth = s * 0.11;
-  c.beginPath(); c.moveTo(x - s * 0.08, Y(0.85)); c.lineTo(x - s * 0.1 + leg * s, Y(0.04)); c.moveTo(x + s * 0.08, Y(0.85)); c.lineTo(x + s * 0.1 - leg * s, Y(0.04)); c.stroke();
-  c.fillStyle = '#fff'; for (const k of [-1, 1]) { c.beginPath(); c.ellipse(x + k * (s * 0.1) + (k < 0 ? leg : -leg) * s + face * s * 0.04, Y(0.03), s * 0.09, s * 0.045, 0, 0, 7); c.fill(); }
-  // shorts + shirt
-  c.fillStyle = '#1d2433'; rr(c, x - s * 0.2, Y(1.0), s * 0.4, s * 0.22, s * 0.05); c.fill();
-  c.fillStyle = col; rr(c, x - s * 0.22, Y(1.5), s * 0.44, s * 0.55, s * 0.12); c.fill();
-  c.fillStyle = 'rgba(255,255,255,.25)'; c.fillRect(x - s * 0.22, Y(1.22), s * 0.44, s * 0.05);
-  // head
-  c.fillStyle = '#f1c79b'; c.beginPath(); c.arc(x, Y(1.66), s * 0.13, 0, 7); c.fill();
-  c.fillStyle = col; c.beginPath(); c.arc(x, Y(1.7), s * 0.135, Math.PI, 0); c.fill();
-  c.fillRect(x + (face > 0 ? 0 : -s * 0.22), Y(1.72), s * 0.22, s * 0.04);
-  // arm + paddle
-  const sw = p.swing || 0, shot = p.swingShot;
-  let ang; // radians, 0 = pointing forward
-  if (sw > 0) { const t = 1 - sw; ang = shot === 'smash' ? (-2.2 + t * 3.2) : shot === 'serve' ? (1.3 - t * 2.4) : (-1.4 + t * 2.4); }
-  else ang = 0.35 + Math.sin(performance.now() / 400 + p.i) * 0.05;
-  const sh = [x + face * s * 0.16, Y(1.4)], L = s * 0.5;
-  const hx = sh[0] + face * Math.cos(ang) * L * 0.55, hy = sh[1] + Math.sin(ang) * L * 0.55 + s * 0.12;
-  c.strokeStyle = '#f1c79b'; c.lineWidth = s * 0.08; c.beginPath(); c.moveTo(sh[0], sh[1]); c.lineTo(hx, hy); c.stroke();
-  const px = hx + face * Math.cos(ang) * s * 0.22, py = hy + Math.sin(ang) * s * 0.22;
-  c.strokeStyle = '#333'; c.lineWidth = s * 0.05; c.beginPath(); c.moveTo(hx, hy); c.lineTo(px, py); c.stroke();
-  c.save(); c.translate(px + face * Math.cos(ang) * s * 0.1, py + Math.sin(ang) * s * 0.1); c.rotate(face > 0 ? ang : Math.PI - ang);
-  c.fillStyle = p.team === 0 ? '#ffd23f' : '#9bff6a'; c.strokeStyle = '#1a1a1a'; c.lineWidth = Math.max(1, s * 0.02);
-  c.beginPath(); c.ellipse(0, 0, s * 0.16, s * 0.12, 0, 0, 7); c.fill(); c.stroke(); c.restore();
+  const co = p.co != null ? p.co : p.i % 4, col = COLS[co], face = proj(0, pos.y, 0)[0] >= x ? 1 : -1; // always face the net
+  const spd = Math.hypot(p.vx || 0, p.vy || 0); const now = performance.now() / 1000;
+  p.walk = (p.walk || 0) + spd * 0.045;
+  // shadow + "me" ring
+  c.fillStyle = 'rgba(0,0,0,.28)'; c.beginPath(); c.ellipse(x, y, Math.max(0, s * 0.36), Math.max(0, s * 0.12), 0, 0, 7); c.fill();
+  c.strokeStyle = col; c.globalAlpha = 0.75; c.lineWidth = Math.max(1.5, s * 0.03); c.stroke(); c.globalAlpha = 1;
+  if (me) { c.strokeStyle = '#ffe14d'; c.lineWidth = Math.max(2, s * 0.04); c.beginPath(); c.ellipse(x, y, Math.max(0, s * 0.5), Math.max(0, s * 0.17), 0, 0, 7); c.stroke(); }
+  const k = (s * 1.72 * KZ) / BODY; // sprite px -> screen px
+  const sw = p.swing || 0, shot = p.swingShot, t = 1 - sw, ph = sw > 0 ? Math.sin(Math.PI * t) : 0;
+  const sqx = 1 + ph * 0.07, sqy = 1 - ph * 0.08; // squash on contact
+  const sh = sheet(p.ch || 0, co);
+  let row = 0, fr = Math.floor(now * 6 + p.i) % 4;
+  if (spd > 0.5) { row = 1; fr = Math.floor(p.walk) % 6; }
+  c.save(); c.translate(x, y); c.scale(face * sqx, sqy);
+  // paddle arm behind the body when it's swung back
+  const ang = sw > 0 ? (shot === 'smash' ? -2.3 + t * 3.4 : shot === 'serve' ? 1.5 - t * 2.3 : shot === 'lob' ? 1.2 - t * 2.6 : -1.5 + t * 2.5) : 0.75 + Math.sin(now * 2.5 + p.i) * 0.05;
+  const shx = 1 * k, shy = -71 * k, L = 30 * k;
+  const drawArm = () => {
+    const hx = shx + Math.cos(ang) * L, hy = shy + Math.sin(ang) * L;
+    if (sw > 0) { c.strokeStyle = '#f1c79b'; c.lineCap = 'round'; c.lineWidth = Math.max(1, 6 * k); c.beginPath(); c.moveTo(shx, shy); c.lineTo(hx, hy); c.stroke(); c.fillStyle = col; c.beginPath(); c.arc(hx, hy, Math.max(0, 4.5 * k), 0, 7); c.fill(); }
+    const px = hx + Math.cos(ang) * 10 * k, py = hy + Math.sin(ang) * 10 * k;
+    c.strokeStyle = '#2b2b2b'; c.lineWidth = Math.max(1, 3.4 * k); c.beginPath(); c.moveTo(hx, hy); c.lineTo(px, py); c.stroke();
+    c.save(); c.translate(px + Math.cos(ang) * 9 * k, py + Math.sin(ang) * 9 * k); c.rotate(ang);
+    c.fillStyle = '#1d2433'; c.strokeStyle = col; c.lineWidth = Math.max(1, 2.4 * k); c.beginPath(); c.ellipse(0, 0, Math.max(0, 11 * k), Math.max(0, 8.5 * k), 0, 0, 7); c.fill(); c.stroke();
+    c.fillStyle = 'rgba(255,255,255,.18)'; c.beginPath(); c.ellipse(-2 * k, -2 * k, Math.max(0, 5 * k), Math.max(0, 3 * k), 0, 0, 7); c.fill(); c.restore();
+  };
+  const back = sw > 0 && Math.cos(ang) < -0.2;
+  if (back) drawArm();
+  if (sh) c.drawImage(sh, fr * FW, row * FH, FW, FH, -AX * k, -AY * k, FW * k, FH * k);
+  else { c.fillStyle = col; c.fillRect(-10 * k, -100 * k, 20 * k, 60 * k); c.beginPath(); c.arc(0, -110 * k, Math.max(0, 12 * k), 0, 7); c.fill(); }
+  if (!back) drawArm();
+  c.restore();
   // label
   const nm = (me ? '▼ ' : '') + p.name;
-  c.font = `800 ${Math.max(10, Math.min(15, s * 0.2))}px sans-serif`; c.textAlign = 'center';
-  const tw = c.measureText(nm).width + 10, ly = Y(2.05);
-  c.fillStyle = me ? 'rgba(255,225,77,.92)' : 'rgba(0,0,0,.55)'; rr(c, x - tw / 2, ly - 14, tw, 18, 8); c.fill();
+  c.font = `800 ${Math.max(10, Math.min(14, s * 0.2))}px sans-serif`; c.textAlign = 'center';
+  const tw = c.measureText(nm).width + 10, ly = y - BODY * k * 1.06 - 4;
+  c.fillStyle = me ? 'rgba(255,225,77,.92)' : 'rgba(0,0,0,.55)'; rr(c, x - tw / 2, ly - 13, tw, 17, 8); c.fill();
+  c.fillStyle = col; c.fillRect(x - tw / 2 + 3, ly + 2, tw - 6, 2);
   c.fillStyle = me ? '#13213f' : '#fff'; c.fillText(nm, x, ly);
-  if (m && m.phase === 'serve' && m.server === p.i) { c.fillStyle = '#ffe14d'; c.font = `900 ${Math.max(10, s * 0.18)}px sans-serif`; c.fillText('發球', x, ly - 18); }
+  if (m && m.phase === 'serve' && m.server === p.i) { c.fillStyle = '#ffe14d'; c.font = `900 ${Math.max(10, s * 0.18)}px sans-serif`; c.fillText('發球', x, ly - 16); }
 }
 function drawBall(c, b) {
   const q = proj(b.x, b.y, b.z), g = proj(b.x, b.y, 0), s = q[2];
@@ -219,6 +245,12 @@ function render(dt) {
       if (e.out) { ctx.fillStyle = `rgba(255,70,70,${1 - k})`; ctx.font = `900 ${s * 0.3}px sans-serif`; ctx.textAlign = 'center'; ctx.fillText('OUT', q[0], q[1] - s * 0.2); } }
   }
   const b = m.ball, bv = { x: b.x + (ballOff.x || 0), y: b.y + (ballOff.y || 0), z: Math.max(C.R, b.z + (ballOff.z || 0)) };
+  if (me && role !== 'spectator' && m.diff !== 'hard' && m.phase === 'rally' && m.live && m.lastHitTeam !== me.team && m.bounces === 0) {
+    const key = m.point + ':' + m.hits; if (hintKey !== key || !hintPt) { hintKey = key; const pr = PB.predict(m); hintPt = pr.firstBounce || null; }
+    if (hintPt && (hintPt.x < 0 ? 0 : 1) === me.team && !PB.isOut(hintPt.x, hintPt.y)) { const q = proj(hintPt.x, hintPt.y, 0), s = q[2], pu = 0.75 + 0.25 * Math.sin(performance.now() / 110);
+      ctx.strokeStyle = `rgba(255,225,77,${0.85 * pu})`; ctx.lineWidth = Math.max(2, s * 0.05); ctx.beginPath(); ctx.ellipse(q[0], q[1], Math.max(0, s * 0.42), Math.max(0, s * 0.42 * SN * 0.62), 0, 0, 7); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,225,77,.18)'; ctx.fill(); }
+  } else hintPt = null;
   drawShadow(ctx, bv);
   const objs = m.players.map((p) => ({ k: 'p', p, x: (p.rp || p).x, y: (p.rp || p).y }));
   objs.push({ k: 'b', x: bv.x, y: bv.y });
@@ -261,7 +293,8 @@ $('bSound').onclick = () => { sound = !sound; try { localStorage.pbSound = sound
 $('bSound').textContent = sound ? '🔊' : '🔇';
 
 // ---------- messages / HUD ----------
-let msgTimer = 0, lastFault = null; const hitCount = {};
+let hintKey = '', hintPt = null;
+let msgTimer = 0, lastFault = null, lastReason = ''; const hitCount = {};
 function showMsg(a, b, cls, dur) { const e = $('msg'); $('msgA').textContent = a; $('msgB').textContent = b || ''; e.className = cls || 'info'; void e.offsetWidth; e.style.animation = 'none'; void e.offsetWidth; e.style.animation = ''; clearTimeout(msgTimer); msgTimer = setTimeout(() => e.classList.add('hide'), dur || 1700); }
 function toast(t) { const e = $('toast'); e.textContent = t; e.classList.remove('hide'); clearTimeout(toast.t); toast.t = setTimeout(() => e.classList.add('hide'), 2600); }
 const teamOf = (i) => i % 2;
@@ -277,9 +310,9 @@ function handleEvent(e) {
       const mine = role !== 'spectator' && teamOf(mySeat) === (e.k === 'point' ? e.team : (lastFault ? 1 - lastFault.team : -1));
       (e.k === 'point' ? SFX.point : SFX.side)();
       const who = lastFault && lastFault.who >= 0 && m.players[lastFault.who] ? m.players[lastFault.who].name + ' 失誤・' : '';
-      showMsg(lastFault ? lastFault.reason : '', who + e.text, mine ? 'good' : 'bad', 1800);
-      lastFault = null; break; }
-    case 'call': showMsg(e.text, (e.first ? '開賽！' : '') + '發球：' + (m.players[e.server] ? m.players[e.server].name : ''), 'info', 1300); break;
+      showMsg(lastFault ? lastFault.reason : '', who + e.text, mine ? 'good' : 'bad', 2300);
+      lastReason = lastFault ? lastFault.reason : ''; lastFault = null; break; }
+    case 'call': showMsg(e.text, (e.first ? '開賽！' : lastReason ? '上一球：' + lastReason + '・' : '') + '發球：' + (m.players[e.server] ? m.players[e.server].name : ''), 'info', lastReason ? 2000 : 1300); lastReason = ''; break;
     case 'win': SFX.win(); break;
     case 'over': endGame(); break;
   }
@@ -289,16 +322,16 @@ function updHUD() {
   if (!m) return;
   const lt = R === 1 ? 0 : 1, rt = 1 - lt;
   const names = (t) => m.players.filter((p) => p.team === t).map((p) => (p.i === mySeat && role !== 'spectator' ? '★' : '') + p.name).join('<br>');
-  const sig = [m.score.join(), m.servingTeam, m.serverNum, m.server, lt, m.players.map((p) => p.name).join()].join('|');
+  const sig = [m.score.join(), m.servingTeam, m.serverNum, m.server, lt, m.players.map((p) => p.name + p.co).join()].join('|');
   if (sig !== hudSig) {
     hudSig = sig;
-    $('tmL').style.background = TEAM_GRAD[lt]; $('tmR').style.background = TEAM_GRAD[rt];
+    const lead = (t) => { const q = m.players.find((p) => p.team === t); return q ? q.co : t; }; $('tmL').style.background = teamGrad(lead(lt)); $('tmR').style.background = teamGrad(lead(rt));
     $('nmL').innerHTML = names(lt); $('nmR').innerHTML = names(rt);
     $('scL').textContent = m.score[lt]; $('scR').textContent = m.score[rt];
     $('tmL').classList.toggle('serving', m.servingTeam === lt); $('tmR').classList.toggle('serving', m.servingTeam === rt);
     $('call').textContent = PB.callText(m);
     const sp = m.players[m.server];
-    $('srv').textContent = `${TEAM_NAME[m.servingTeam]}發球${m.mode === 2 ? '・第' + m.serverNum + '發球員' : ''}・${sp ? sp.name : ''}`;
+    $('srv').textContent = `${m.teamNames[m.servingTeam]}發球${m.mode === 2 ? '・第' + m.serverNum + '發球員' : ''}・${sp ? sp.name : ''}`;
   }
   // rule tips
   const tip = $('tip'); let t = '', warn = false; const me = m.players[mySeat];
@@ -386,15 +419,15 @@ function localInput(p) {
 // ---------- game flow ----------
 function seatsLocal(mode) {
   const n = mode * 2, s = [];
-  for (let i = 0; i < n; i++) s.push(i === 0 ? { name: myName(), ctrl: 'local' } : { name: i % 2 === 0 ? '電腦隊友' : '電腦' + (i === 1 ? '甲' : '乙'), ctrl: 'ai' });
-  if (mode === 1) s[1].name = '電腦';
+  for (let i = 0; i < n; i++) s.push(i === 0 ? { name: myName(), ctrl: 'local', ...myLook() } : { name: '', ctrl: 'ai' });
+  const L = assignLooks(s); s.forEach((q, i) => { q.ch = L[i].ch; q.co = L[i].co; if (i) q.name = CHARS[q.ch].n + (i % 2 === 0 ? '（隊友）' : mode === 1 ? '' : i === 1 ? '甲' : '乙'); });
   return s;
 }
 function myName() { const v = $('nick').value.trim(); return (v || autoNick).slice(0, 8); }
 const autoNick = '玩家' + ((Math.random() * 900 + 100) | 0);
 function startLocal(mode) {
   role = 'local'; mySeat = 0; R = 1;
-  const cfg = { mode, diff: opt.diff, target: opt.target, seats: seatsLocal(mode), firstServe: Math.random() < 0.5 ? 0 : 1 };
+  const seats = seatsLocal(mode); const cfg = { mode, diff: opt.diff, target: opt.target, seats, teamNames: teamNamesOf(seats), firstServe: Math.random() < 0.5 ? 0 : 1 };
   beginMatch(cfg);
 }
 function beginMatch(cfg) {
@@ -409,10 +442,10 @@ function beginMatch(cfg) {
 function endGame() {
   if (!m) return; state = 'end';
   const w = m.winner, s = m.score; const mine = role !== 'spectator' && teamOf(mySeat) === w;
-  $('endT').textContent = (mine ? '🏆 你贏了！' : role === 'spectator' ? '🏆 ' : '再接再厲！') + ' ' + TEAM_NAME[w] + '獲勝';
+  $('endT').textContent = (mine ? '🏆 你贏了！' : role === 'spectator' ? '🏆 ' : '再接再厲！') + ' ' + m.teamNames[w] + '獲勝';
   $('endS').textContent = `${s[0]} : ${s[1]}`;
   const st = m.stats || {}; const rl = st.rallies && st.rallies.length ? (st.rallies.reduce((a, b) => a + b, 0) / st.rallies.length).toFixed(1) : '-';
-  $('endSub').textContent = `藍隊 ${s[0]} － 紅隊 ${s[1]}` + (role !== 'client' ? `・平均每回合 ${rl} 拍` : '');
+  $('endSub').textContent = `${m.teamNames[0]} ${s[0]} － ${m.teamNames[1]} ${s[1]}` + (role !== 'client' ? `・平均每回合 ${rl} 拍` : '');
   $('bAgain').classList.toggle('hide', role === 'client' || role === 'spectator');
   $('bMenu').textContent = role === 'local' ? '回主選單' : role === 'host' ? '回到房間' : '離開房間';
   if (role === 'client' || role === 'spectator') $('endSub').textContent += '　等待房主開始下一局…';
@@ -421,7 +454,7 @@ function endGame() {
 function toMenu(msg) {
   state = 'menu'; m = null; role = 'local'; R = 1; layer = null;
   ['room', 'end', 'pause', 'hud', 'touch', 'keys', 'tip', 'msg'].forEach((i) => $(i).classList.add('hide'));
-  $('menu').classList.remove('hide'); st(msg || ''); resize();
+  optHome(); $('menu').classList.remove('hide'); st(msg || ''); resize();
 }
 function togglePause() {
   if (state !== 'play') return;
@@ -442,12 +475,15 @@ function seg(id, key, cb) {
 }
 const syncs = [];
 const syncAll = () => syncs.forEach((f) => f());
-syncs.push(seg('segDiff', 'diff'), seg('segTarget', 'target'), seg('segDiff2', 'diff', () => hostCfg()), seg('segTarget2', 'target', () => hostCfg()), seg('segMode', 'mode', () => hostCfg()));
+syncs.push(seg('segDiff', 'diff', () => hostCfg()), seg('segTarget', 'target', () => hostCfg()), seg('segMode', 'mode', () => hostCfg()), seg('segChar', 'ch', () => drawPrev()), seg('segCol', 'co', () => drawPrev()));
+document.querySelectorAll('#segCol button').forEach((b) => { b.style.setProperty('--c', COLS[+b.dataset.v]); });
 syncAll();
 try { $('nick').value = localStorage.pbNick || ''; } catch (_) {}
 $('nick').addEventListener('change', () => { try { localStorage.pbNick = $('nick').value.trim(); } catch (_) {} });
 $('bS1').onclick = () => { audio(); SFX.click(); startLocal(1); };
 $('bS2').onclick = () => { audio(); SFX.click(); startLocal(2); };
+function drawPrev() { const cv2 = $('lookPrev'); if (!cv2) return; const g = cv2.getContext('2d'); const L = myLook(); g.clearRect(0, 0, cv2.width, cv2.height); const sh = sheet(L.ch, L.co); if (sh) { const fr = Math.floor(performance.now() / 166) % 4, k = cv2.height / FH; g.drawImage(sh, fr * FW, 0, FW, FH, (cv2.width - FW * k) / 2, 0, FW * k, FH * k); } $('lookName').textContent = CHARS[L.ch].n + '・' + COLN[L.co]; }
+setInterval(() => { if (state === 'menu') drawPrev(); }, 166);
 const showRules = () => $('rules').classList.remove('hide');
 $('bRules').onclick = showRules; $('bRules2').onclick = showRules; $('bRulesOk').onclick = () => $('rules').classList.add('hide');
 $('code').addEventListener('input', () => { $('code').value = $('code').value.replace(/\D/g, '').slice(0, 4); });
@@ -460,7 +496,7 @@ const HTTP_URL = RELAY_URL.replace(/^ws/, 'http').replace(/\/ws$/, '/');
 try { fetch(HTTP_URL, { mode: 'no-cors', cache: 'no-store' }).catch(() => {}); } catch (_) {} // wake the free-tier server early
 let ws = null, net = false, isHost = false, myId = '', roomCode = '', roster = [], connGen = 0, joinTimer = 0, cfgTimer = 0, lastAction = null;
 let room = { mode: opt.mode, diff: opt.diff, target: opt.target };
-let outbox = [], sendAcc = 0, inAcc = 0, remoteIn = {}, seatIds = [], lastSnapAt = 0;
+let prefs = {}; let outbox = [], sendAcc = 0, inAcc = 0, remoteIn = {}, seatIds = [], lastSnapAt = 0;
 const ERR = { notfound: '找不到這個房間，請確認房號', full: '房間已滿（最多 4 人）', nocode: '目前沒有空房號，請稍後再試', bad: '房號格式錯誤' };
 const st = (t) => { $('status').textContent = t; $('rstatus').textContent = t; };
 const wsend = (o) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); };
@@ -495,7 +531,8 @@ function connect(first, onMsg, dl, gen) {
     toMenu('與伺服器斷線'); toast('與伺服器斷線');
   };
 }
-function showMenuOnly() { $('room').classList.add('hide'); $('menu').classList.remove('hide'); state = 'menu'; }
+function optHome() { $('menuOpts').appendChild($('optCore')); ['segDiff', 'segTarget'].forEach((id) => $(id).classList.remove('dis')); }
+function showMenuOnly() { optHome(); $('room').classList.add('hide'); $('menu').classList.remove('hide'); state = 'menu'; }
 function leaveRoom() { connGen++; wsend({ t: 'leave' }); const w = ws; ws = null; net = false; try { w && w.close(); } catch (_) {} isHost = false; toMenu(); }
 $('bLeave').onclick = leaveRoom;
 function openRoom() {
@@ -503,15 +540,15 @@ function openRoom() {
   ['menu', 'end', 'pause', 'hud', 'touch', 'keys', 'tip', 'msg'].forEach((i) => $(i).classList.add('hide'));
   $('room').classList.remove('hide'); $('rcode').textContent = roomCode; st('');
   $('bStart').classList.toggle('hide', !isHost);
-  ['segMode', 'segDiff2', 'segTarget2'].forEach((id) => $(id).classList.toggle('dis', !isHost));
+  $('roomOpts').appendChild($('optCore')); ['segMode', 'segDiff', 'segTarget'].forEach((id) => $(id).classList.toggle('dis', !isHost));
   $('roomNote').textContent = isHost ? '點選座位換位置；空位由電腦補上。把房號告訴朋友，最多 4 人。' : '點選座位換位置；等待房主開始比賽…';
-  renderSeats();
+  if (isHost) hostCfg(); else renderSeats();
 }
 function renderSeats() {
   const n = room.mode * 2; const by = {}; for (const p of roster) by[p.c] = p;
   const seat = (i) => { const p = by[i], on = i < n, me = p && p.id === myId;
-    return `<button class="seat${me ? ' me' : ''}${!p ? ' ai' : ''}${on ? '' : ' off'}" data-seat="${i}"><span class="dot" style="background:${SEAT_COL[i]}"></span>${p ? esc(p.n) + (p.h ? ' 👑' : '') + (me ? '（你）' : '') : on ? '🤖 電腦' : '（單打不使用）'}</button>`; };
-  $('seats').innerHTML = [0, 1].map((t) => `<div class="team t${t}"><h3>${TEAM_NAME[t]}</h3>${seat(t)}${room.mode === 2 || roster.some((p) => p.c === t + 2) ? seat(t + 2) : ''}</div>`).join('');
+    return `<button class="seat${me ? ' me' : ''}${!p ? ' ai' : ''}${on ? '' : ' off'}" data-seat="${i}"><span class="dot" style="background:${room.L && room.L[i] ? COLS[room.L[i].co] : '#888'}"></span>${room.L && room.L[i] && on ? `<span class="cn">${CHARS[room.L[i].ch].n}</span>` : ''}${p ? esc(p.n) + (p.h ? ' 👑' : '') + (me ? '（你）' : '') : on ? '🤖 電腦' : '（單打不使用）'}</button>`; };
+  $('seats').innerHTML = [0, 1].map((t) => `<div class="team t${t}"><h3>${room.L && room.L[t] ? COLN[room.L[t].co] + '隊' : TEAM_NAME[t]}</h3>${seat(t)}${room.mode === 2 || roster.some((p) => p.c === t + 2) ? seat(t + 2) : ''}</div>`).join('');
   const out = roster.filter((p) => p.c >= n); $('roomNote').textContent = out.length ? `${out.map((p) => p.n).join('、')} 目前在單打不使用的座位，會變成觀戰。` : (isHost ? '點選座位換位置；空位由電腦補上。把房號告訴朋友，最多 4 人。' : '點選座位換位置；等待房主開始比賽…');
 }
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -520,7 +557,7 @@ $('rcode').onclick = $('bCopy').onclick = async () => { const u = location.origi
 
 // host
 function host() {
-  audio(); isHost = true; role = 'host'; lastAction = host; roster = []; room = { mode: opt.mode, diff: opt.diff, target: opt.target };
+  audio(); isHost = true; role = 'host'; lastAction = host; roster = []; prefs = {}; room = { mode: opt.mode, diff: opt.diff, target: opt.target };
   connect({ t: 'create', name: myName(), g: 'm', c: 0 }, (msg) => {
     if (msg.t === 'created') { clearTimeout(joinTimer); myId = msg.id; roomCode = msg.code; net = true; remoteIn = {}; openRoom(); }
     else if (msg.t === 'peer-join') { /* wait for hello */ }
@@ -528,13 +565,15 @@ function host() {
     else if (msg.t === 'msg') hostHandle(msg.from, msg.d);
   });
 }
-function hostCfg() { if (!isHost) return; room = { mode: opt.mode, diff: opt.diff, target: opt.target }; renderSeats(); toAll({ t: 'cfg', room }); }
-function hostRosterChanged() { if (state === 'room') toAll({ t: 'cfg', room }); }
+function roomSeats() { const n = room.mode * 2, out = []; for (let i = 0; i < n; i++) { const p = roster.find((q) => q.c === i); const pf = p ? (p.id === myId ? myLook() : prefs[p.id] || {}) : null; out.push(p ? { ctrl: 'h', ch: pf.ch, co: pf.co, id: p.id, name: p.n } : { ctrl: 'ai' }); } return out; }
+function hostCfg() { if (!isHost) return; room = { mode: opt.mode, diff: opt.diff, target: opt.target }; room.L = assignLooks(roomSeats()); renderSeats(); toAll({ t: 'cfg', room }); }
+function hostRosterChanged() { if (state === 'room') hostCfg(); }
 function hostHandle(from, d) {
   if (!d || typeof d !== 'object') return;
   if (d.t === 'hello') {
     if (d.game !== 'pickleball') { wsend({ t: 'kick', id: from }); return; }
-    toPeer(from, { t: 'cfg', room });
+    prefs[from] = { ch: d.ch === 1 ? 1 : 0, co: d.co >= 0 && d.co < 4 ? d.co | 0 : null };
+    if (state === 'room') hostCfg(); else toPeer(from, { t: 'cfg', room });
     if (m && (state === 'play' || state === 'end')) { // joined mid-game: take over an AI seat if possible
       const rp = roster.find((p) => p.id === from); let i = rp && rp.c < m.players.length && m.players[rp.c].ctrl === 'ai' ? rp.c : m.players.findIndex((p) => p.ctrl === 'ai' && p.i !== mySeat);
       if (i >= 0) { const p = m.players[i]; p.ctrl = 'remote'; p.name = rp ? rp.n : '玩家'; seatIds[i] = from; toAll({ t: 'names', n: m.players.map((q) => q.name) }); toast(`${p.name} 加入比賽`); }
@@ -548,14 +587,15 @@ function hostHandle(from, d) {
     if (d.pt === m.point && Number.isFinite(d.x) && Number.isFinite(d.y)) { p.vx = (d.x - p.x) * 30; p.vy = (d.y - p.y) * 30; p.x = d.x; p.y = d.y; PB.clampPlayer(m, p); }
   }
 }
-function netCfg() { return { mode: m.mode, diff: m.diff, target: m.target, seats: m.players.map((p) => ({ name: p.name, ctrl: p.ctrl === 'ai' ? 'ai' : 'h' })) }; }
+function netCfg() { return { mode: m.mode, diff: m.diff, target: m.target, teamNames: m.teamNames, seats: m.players.map((p) => ({ name: p.name, ctrl: p.ctrl === 'ai' ? 'ai' : 'h', ch: p.ch, co: p.co })) }; }
 function hostStart() {
   audio(); const n = room.mode * 2; seatIds = []; const seats = [];
-  for (let i = 0; i < n; i++) { const p = roster.find((q) => q.c === i); seatIds[i] = p ? p.id : null; seats.push(p ? { name: p.n, ctrl: p.id === myId ? 'local' : 'remote' } : { name: '電腦' + '甲乙丙丁'[i], ctrl: 'ai' }); }
+  const RS = roomSeats(), L = assignLooks(RS);
+  for (let i = 0; i < n; i++) { const p = roster.find((q) => q.c === i); seatIds[i] = p ? p.id : null; seats.push(p ? { name: p.n, ctrl: p.id === myId ? 'local' : 'remote', ch: L[i].ch, co: L[i].co } : { name: CHARS[L[i].ch].n + '（電腦）', ctrl: 'ai', ch: L[i].ch, co: L[i].co }); }
   const me = seatIds.indexOf(myId); mySeat = me; role = 'host';
   if (me < 0) toast('你坐在單打不使用的座位，本局觀戰（主持）');
   R = me >= 0 && teamOf(me) === 1 ? -1 : 1; layer = null;
-  const cfg = { mode: room.mode, diff: room.diff, target: room.target, seats, firstServe: Math.random() < 0.5 ? 0 : 1 };
+  const cfg = { mode: room.mode, diff: room.diff, target: room.target, seats, teamNames: teamNamesOf(L), firstServe: Math.random() < 0.5 ? 0 : 1 };
   remoteIn = {}; outbox = [];
   beginMatch(cfg);
   wsend({ t: 'started' });
@@ -576,7 +616,7 @@ function join(code) {
   audio(); code = String(code || '').replace(/\D/g, ''); if (code.length !== 4) { st('請輸入 4 位數房號'); return; }
   isHost = false; role = 'client'; roomCode = code; roster = []; lastAction = () => join(code);
   connect({ t: 'join', code, name: myName(), g: 'm', c: 0 }, (msg) => {
-    if (msg.t === 'joined') { clearTimeout(joinTimer); myId = msg.id; net = true; toHost({ t: 'hello', game: 'pickleball', n: myName() }); st(msg.started ? '加入進行中的比賽…' : '');
+    if (msg.t === 'joined') { clearTimeout(joinTimer); myId = msg.id; net = true; toHost({ t: 'hello', game: 'pickleball', n: myName(), ...myLook() }); st(msg.started ? '加入進行中的比賽…' : '');
       clearTimeout(cfgTimer); cfgTimer = setTimeout(() => { if (state === 'menu' && net) { failNet('這個房號不是匹克球房間'); wsend({ t: 'leave' }); } }, 6000);
       if (!msg.started) openRoom(); }
     else if (msg.t === 'host-left') { net = false; toMenu('房主離開了，房間已關閉'); toast('房主離開了，房間已關閉'); try { ws && ws.close(); } catch (_) {} ws = null; }
@@ -588,7 +628,7 @@ function clientHandle(d) {
   if (d.t === 'cfg') { clearTimeout(cfgTimer); room = d.room; opt.mode = room.mode; syncAll(); if (state === 'room') renderSeats(); else if (state === 'menu') openRoom(); }
   else if (d.t === 'start') {
     clearTimeout(cfgTimer);
-    const seat = d.seat; const cfg = { ...d.cfg, seats: d.cfg.seats.map((s, i) => ({ name: s.name, ctrl: i === seat ? 'local' : 'net' })) };
+    const seat = d.seat; const cfg = { ...d.cfg, seats: d.cfg.seats.map((s, i) => ({ name: s.name, ctrl: i === seat ? 'local' : 'net', ch: s.ch, co: s.co })) };
     role = seat >= 0 ? 'client' : 'spectator'; mySeat = seat >= 0 ? seat : -1;
     R = seat >= 0 && teamOf(seat) === 1 ? -1 : 1; layer = null;
     beginMatch(cfg); m.events.length = 0; if (role === 'spectator') { $('touch').classList.add('hide'); toast('觀戰中'); }
@@ -665,5 +705,5 @@ resize();
 function loop(now) { frame(now); requestAnimationFrame(loop); }
 requestAnimationFrame(loop);
 // test hooks
-window.__pb = { get m() { return m; }, proj, get view() { return { W, H, F, touchUI, safe: safeRect() }; }, get state() { return state; }, get role() { return role; }, get room() { return roomCode; }, get roster() { return roster; }, get net() { return net; }, get fps() { return fps; }, get seat() { return mySeat; }, hitCount, startLocal, press };
+window.__pb = { looks: () => ({ room, prefs, rs: roomSeats() }), get m() { return m; }, proj, get view() { return { W, H, F, touchUI, safe: safeRect() }; }, get state() { return state; }, get role() { return role; }, get room() { return roomCode; }, get roster() { return roster; }, get net() { return net; }, get fps() { return fps; }, get seat() { return mySeat; }, hitCount, startLocal, press };
 })();

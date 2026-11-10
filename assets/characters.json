@@ -1,0 +1,56 @@
+{
+ "frameW": 72,
+ "frameH": 127,
+ "anchor": [
+  36,
+  123
+ ],
+ "colors": [
+  "#e8483b",
+  "#2f8fe0",
+  "#3fb85a",
+  "#f2b630"
+ ],
+ "anims": {
+  "idle": {
+   "row": 0,
+   "frames": 4,
+   "fps": 6
+  },
+  "walk": {
+   "row": 1,
+   "frames": 6,
+   "fps": 12
+  },
+  "jump": {
+   "row": 2,
+   "frames": 4,
+   "fps": 8
+  },
+  "climb": {
+   "row": 3,
+   "frames": 4,
+   "fps": 8
+  },
+  "fall": {
+   "row": 4,
+   "frames": 4,
+   "fps": 8
+  }
+ },
+ "chars": [
+  {
+   "k": "ayan",
+   "name": "阿岩",
+   "base": "male.png",
+   "mask": "male_mask.png"
+  },
+  {
+   "k": "xiaopan",
+   "name": "小攀",
+   "base": "female.png",
+   "mask": "female_mask.png"
+  }
+ ],
+ "source": "遊戲模組部門 peak2d/characters v5 (base+mask, tinted at runtime: out = base*(1-m) + base*color*m)"
+}

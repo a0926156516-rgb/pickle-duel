@@ -68,7 +68,7 @@ const alive = async (p) => { const a = await p.evaluate(() => __pb.m ? __pb.m.t 
     if (d.shots) await p.screenshot({ path: OUT + `play_after_rotation_${d.tag}.png` });
     // autopilot match in landscape to confirm the game plays out
     await p.goto(BASE + '?auto=1'); await p.fill('#nick', '峻慶'); await p.tap('#bS1'); await p.waitForTimeout(12000);
-    const s = await p.evaluate(() => ({ score: __pb.m.score, rallies: __pb.m.stats.rallies.length, hits: Object.values(__pb.hitCount).reduce((a, b) => a + b, 0) }));
+    const s = await p.evaluate(() => ({ st: __pb.state, pause: !document.getElementById('pause').classList.contains('hide'), score: __pb.m.score, rallies: __pb.m.stats.rallies.length, hits: Object.values(__pb.hitCount).reduce((a, b) => a + b, 0) }));
     ok(s.hits >= 2 && (s.rallies >= 1 || s.hits >= 8), `[${d.tag}] autopilot 1v1 in landscape: ${JSON.stringify(s)}`);
     if (d.shots) await p.screenshot({ path: OUT + `play_1v1_rally_${d.tag}.png` });
     ok(errs.length === 0, `[${d.tag}] no console errors/warnings ${errs.slice(0, 3).join(' | ')}`);

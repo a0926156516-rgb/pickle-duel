@@ -344,9 +344,11 @@ function placeMsg(force) {
   const e = $('msg'); if (!PORT || e.classList.contains('hide')) { if (e.style.top) e.style.top = ''; return; }
   const me = m && m.players[mySeat]; if (!me) return; const hh = (e.offsetHeight || 60) * 0.6 + 8; // room for the pop-in scale
   const f = proj(me.x, me.y, 0), hd = proj(me.x, me.y, 2.3), y0 = hd[1] - 22, y1 = f[1] + 8; // head + name tag .. feet
-  const rows = [pv(0, -C.K * 0.55, 0)[1], pv(0, -(C.K + C.HL) * 0.5 - 0.6, 0)[1], pv(0, C.K * 0.5, 0)[1]];
+  const rows = [pv(0, -C.K * 0.55, 0)[1], pv(0, -(C.K + C.HL) * 0.5 - 0.6, 0)[1], pv(0, C.K * 0.5, 0)[1], pv(0, 0, 0)[1] - hh * 0.4];
   const cur = parseFloat(e.style.top); const clear = (y) => y + hh < y0 || y - hh > y1;
-  if (!force && cur && clear(cur)) return; const y = rows.find(clear); e.style.top = Math.round(y != null ? y : rows[0]) + 'px';
+  if (!force && cur && clear(cur)) return; let y = rows.find(clear);
+  if (y == null) { const ov = (r) => Math.max(0, Math.min(r + hh, y1) - Math.max(r - hh, y0)); y = rows.reduce((a, r) => (ov(r) < ov(a) ? r : a), rows[0]); } // nothing fully clear: least overlap with me
+  e.style.top = Math.round(y) + 'px';
 }
 function showMsg(a, b, cls, dur) { const e = $('msg'); $('msgA').textContent = a; $('msgB').textContent = b || ''; e.className = cls || 'info'; void e.offsetWidth; e.style.animation = 'none'; void e.offsetWidth; e.style.animation = ''; clearTimeout(msgTimer); msgTimer = setTimeout(() => e.classList.add('hide'), dur || 1700); e.style.top = ''; placeMsg(true); }
 function toast(t) { const e = $('toast'); e.textContent = t; e.classList.remove('hide'); clearTimeout(toast.t); toast.t = setTimeout(() => e.classList.add('hide'), 2600); }

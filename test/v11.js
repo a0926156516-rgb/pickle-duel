@@ -56,6 +56,7 @@ let fails = 0; const ok = (c, t) => { console.log((c ? 'PASS ' : 'FAIL ') + t); 
   { const { p, ctx } = await mk(390, 844, '?demo=smash&slow', 'slowon', clean); await p.waitForTimeout(400); const s = await p.evaluate(() => __pb.slow); ok(s === 0.5, `?slow (on) defaults to ${s}×`); await ctx.close(); }
   // --- 6a. a shot-button tap feeds at once (screenshots before / after)
   { const { p, tapEl, ctx } = await mk(390, 844, '?demo=smash&diff=easy', 'tapfeed', clean);
+    await p.waitForTimeout(500); await tapEl('#tbLob'); // v12: the first feed waits for the first input
     await p.waitForFunction(() => __pb.m.phase === 'serve' && __pb.PRAC.fed, null, { timeout: 40000, polling: 20 }); await p.waitForTimeout(600);
     await p.screenshot({ path: SHOT + 'tap_feed_1_waiting_390x844.png' }); const srv = await p.evaluate(() => document.getElementById('srv').textContent);
     const t0 = Date.now(); await tapEl('#tbDrive'); await p.waitForFunction(() => __pb.m.phase === 'rally' && __pb.m.lastHitTeam === 1, null, { timeout: 4000, polling: 10 }).catch(() => {}); const dt = (Date.now() - t0) / 1000;

@@ -438,7 +438,7 @@ function sub(m, dt) {
     else if (p.ctrl === 'local' || p.ctrl === 'bot') movePlayer(m, p, p.in.mx, p.in.my, C.SPEED, dt);
     else { clampPlayer(m, p); if (p.swing > 0) p.swing = Math.max(0, p.swing - dt * 3.2); } // remote: position comes from network
   }
-  if (m.phase === 'serve' && m.practice) { holdBall(m); if (m.phaseT > (m.feedWait || 0.8) || (m.feedNow && m.phaseT > 0.3)) { m.feedNow = false; practiceFeed(m); } return; } // v10: the next feed waits ~3 s or for the player's tap
+  if (m.phase === 'serve' && m.practice) { holdBall(m); if (m.phaseT > (m.feedWait || 0.8) || (m.feedNow && m.phaseT > 0.2)) { m.feedNow = false; practiceFeed(m); } return; } // v10: the next feed waits ~3 s or for the player's tap
   if (m.phase === 'serve') {
     const s = m.players[m.server];
     holdBall(m);
@@ -500,7 +500,7 @@ function sub(m, dt) {
   }
   if (m.phase === 'dead') {
     if (b.z <= C.R + 0.001) { b.vx *= 0.96; b.vy *= 0.96; }
-    if (m.phaseT > 1.9) { if (m.winner >= 0) { m.phase = 'over'; ev(m, { k: 'over', team: m.winner }); } else setupPoint(m); }
+    if (m.phaseT > (m.practice && m.deadT ? m.deadT : 1.9)) { if (m.winner >= 0) { m.phase = 'over'; ev(m, { k: 'over', team: m.winner }); } else setupPoint(m); }
   }
 }
 

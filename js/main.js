@@ -206,7 +206,7 @@ function drawNet(c) {
 }
 function rr(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
 const teamCo = (t) => { if (!m) return t; const q = m.players.find((pp) => pp.team === t); return q && q.co != null ? q.co : t; };
-let hudBlock = [], tagRects = [], lastTags = [], fpsY = 0; // screen rects of the scoreboard + brand (name tags are kept below them)
+let hudBlock = [], tagRects = [], lastTags = [], fpsY = 0, fpsR = null; // screen rects of the scoreboard + brand (name tags are kept below them)
 function measureHud() { hudBlock = []; for (const id of ['board', 'brand']) { const e = $(id); if (!e || !e.offsetParent && getComputedStyle(e).position !== 'fixed') continue; const r = appRect(e); if (r.width && r.height) hudBlock.push({ l: r.left - 4, r: r.right + 4, b: r.bottom }); } }
 function drawPlayer(c, p, me) {
   const PM_ = PORT || H < 430 ? 1.32 : 1, minS = PORT ? (H * 0.066) / (1.72 * KZ * PM_) : 0; // far-court players never shrink below ~6.6% of the screen height
@@ -335,7 +335,7 @@ function render(dt) {
   if (m.phase === 'rally' || m.phase === 'dead') { trail.push({ ...bv }); if (trail.length > 12) trail.shift(); } else trail.length = 0;
   if (juice.flash > 0) { ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.fillStyle = `rgba(255,240,250,${Math.min(0.32, juice.flash)})`; ctx.fillRect(0, 0, W, H); juice.flash = Math.max(0, juice.flash - (dt || 0.016) * 1.3); }
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  if (QS.get('fps') === '1') { ctx.fillStyle = '#fff'; ctx.font = '12px monospace'; ctx.textAlign = 'left'; const kb = $('keys'), jh = $('joyHint'), ky = touchUI ? (jh.offsetParent ? Math.min(H - 8, appRect(jh).top - 6) : H - 8) : kb.classList.contains('hide') ? H - 8 : Math.min(H - 8, appRect(kb).top - 6); ctx.fillText(fps.toFixed(0) + ' fps', 8, ky); fpsY = ky; }
+  if (QS.get('fps') === '1') { ctx.fillStyle = '#fff'; ctx.font = '12px monospace'; ctx.textAlign = 'left'; const kb = $('keys'), jh = $('joyHint'); let ky = touchUI ? (jh.offsetParent ? Math.min(H - 8, appRect(jh).top - 6) : H - 8) : kb.classList.contains('hide') ? H - 8 : Math.min(H - 8, appRect(kb).top - 6); if (touchUI && !PORT) { /* v12: touch landscape (incl. forced) puts the readout bottom-centre, clear of the 按住拖曳移動 hint */ ctx.textAlign = 'center'; ky = H - 8; ctx.fillText(fps.toFixed(0) + ' fps', W / 2, ky); fpsR = [W / 2 - 24, ky - 11, W / 2 + 24, ky + 2]; } else { ctx.fillText(fps.toFixed(0) + ' fps', 8, ky); fpsR = [8, ky - 11, 56, ky + 2]; } fpsY = ky; }
 }
 
 // ---------- audio ----------
@@ -480,9 +480,24 @@ const ARM = { pt: -1, h: -1, on: false };
 function armedNow() { const me = m && m.players[mySeat]; return !!(m && m.practice && me && ARM.pt === m.point && (m.phase === 'serve' || (ARM.h === m.hits && m.live && m.lastHitTeam !== me.team))); }
 function armPress() {
   const me = m && m.players[mySeat]; if (!m || !m.practice || !me) return;
-  if (m.phase === 'serve') { ARM.pt = m.point; ARM.h = 4; m.feedNow = true; } // tap = 「我準備好了」: feed now, and keep the smash for it
+  if (m.phase === 'serve') { ARM.pt = m.point; ARM.h = 4; } // keep the smash for the feed that is coming
   else if (m.live && m.lastHitTeam !== me.team) { ARM.pt = m.point; ARM.h = m.hits; }
+  else if (!m.live) PRAC.armNext = true; // between points: keep it for the next feed
 }
+// v12 practice: any stroke key / button is 「我準備好了」 — in the serve phase it feeds now; while a point is being scored or between
+// points it is latched and the next feed comes as soon as the next point is set up. The first feed after loading waits for any input.
+function pracInput(stroke) {
+  if (!m || !m.practice || role !== 'local') return;
+  if (!PRAC.started) { PRAC.started = true; PRAC.ready = true; if (!$('msg').classList.contains('hide') && $('msg').dataset.pr) { $('msg').classList.add('hide'); delete $('msg').dataset.pr; } hudSig = ''; return; }
+  if (!stroke) return;
+  if (m.phase === 'serve') m.feedNow = true; else if (!m.live) PRAC.ready = true;
+}
+function pracTick() {
+  m.feedWait = !PRAC.started ? 1e9 : PRAC.fed ? 1.1 : 0.6; // v12: 1.1 s after a point (v11 2.5 s), or at once when ready
+  m.deadT = PRAC.ready ? 0.5 : 0.9;                          // v12: the point-scored pause (matches use 1.9 s)
+  if (m.phase === 'serve') { if (PRAC.armNext) { PRAC.armNext = false; ARM.pt = m.point; ARM.h = 4; } if (PRAC.ready) { PRAC.ready = false; m.feedNow = true; } }
+}
+function pracPrompt() { showMsg('看到「現在！」就按殺球', FORCED ? '按任一鍵開始・橫向模式（☰ 可切回直向）' : '按任一鍵開始', 'info', 600000); $('msg').dataset.pr = '1'; }
 function armTick(me) {
   if (!armedNow() || m.phase !== 'rally') { ARM.on = false; return; }
   if (PB.inKitchen(me)) { if (ARM.on) { me.in.shotT = -9; ARM.on = false; } return; } // never commit a kitchen volley for you
@@ -518,10 +533,10 @@ function updPrac() {
   $('prDet').innerHTML = `<span>殺球 ${s.n}・致勝 ${s.win}・逼失誤 ${s.forced}</span><span>・被回擊 ${s.ret}・失誤 ${s.own}</span>`;
   el.querySelectorAll('#prDiff button').forEach((b) => b.classList.toggle('sel', b.dataset.d === m.diff));
   el.querySelectorAll('#prSlow button').forEach((b) => b.classList.toggle('sel', +b.dataset.s === SLOW));
-  el.classList.toggle('folded', PORT && !pracSetOpen); $('prSet').textContent = pracSetOpen ? '收起 ▴' : `設定 ▾`; $('prSet').setAttribute('aria-expanded', String(!PORT || pracSetOpen));
+  el.classList.toggle('folded', (PORT || FORCED) && !pracSetOpen); $('prSet').textContent = pracSetOpen ? '收起 ▴' : `設定 ▾`; $('prSet').setAttribute('aria-expanded', String(!(PORT || FORCED) || pracSetOpen));
 }
 // v10 慢動作: practice runs the game clock at 1× / 0.5× / 0.35× (?slow=0.5 or the panel switch; remembered)
-let SLOW = 1, TS = 1; const PRAC = { fed: false };
+let SLOW = 1, TS = 1; const PRAC = { fed: false, ready: false, started: true, armNext: false };
 function slowNow(me) { return SLOW < 1 && me && m.live && m.phase === 'rally' && m.lastHitTeam !== me.team && m.ball.x * PB.teamSign(me.team) > -0.4; } // ball crossing / on my side, coming at me
 const SLOWS = [1, 0.5, 0.35];
 function slowDefault() { if (QS.has('slow') && /^(|on|true)$/.test(QS.get('slow'))) return 0.5; const q = +QS.get('slow'); if (SLOWS.includes(q)) return q; try { const v = +localStorage.pbSlow; if (SLOWS.includes(v)) return v; } catch (_) {} return 1; }
@@ -568,19 +583,19 @@ function updHUD() {
   if (!m) return;
   const lt = R === 1 ? 0 : 1, rt = 1 - lt;
   const names = (t) => m.players.filter((p) => p.team === t).map((p) => (p.i === mySeat && role !== 'spectator' ? '★' : '') + esc(p.name)).join('<br>');
-  const sig = [m.score.join(), m.servingTeam, m.serverNum, m.server, lt, m.players.map((p) => p.name + p.co).join(), m.practice ? (m.phase === 'serve') + ':' + PRAC.fed + ':' + SLOW : ''].join('|');
+  const sig = [m.score.join(), m.servingTeam, m.serverNum, m.server, lt, m.players.map((p) => p.name + p.co).join(), m.practice ? (m.phase === 'serve') + ':' + PRAC.fed + ':' + PRAC.started + ':' + SLOW : ''].join('|');
   if (sig !== hudSig) {
     hudSig = sig;
     const lead = (t) => { const q = m.players.find((p) => p.team === t); return q ? q.co : t; }; $('tmL').style.background = teamGrad(lead(lt)); $('tmR').style.background = teamGrad(lead(rt));
     $('nmL').innerHTML = names(lt); $('nmR').innerHTML = names(rt);
-    $('scL').textContent = m.score[lt]; $('scR').textContent = m.score[rt];
+    $('scL').textContent = m.practice ? '' : m.score[lt]; $('scR').textContent = m.practice ? '' : m.score[rt]; /* v12: practice keeps no pickleball score text at all (no 0-1 flash) */
     $('tmL').classList.toggle('serving', m.servingTeam === lt); $('tmR').classList.toggle('serving', m.servingTeam === rt);
-    { const ow = m.score[lt], op = m.score[rt]; $('call').innerHTML = `<b class="own">${ow}</b><i>-</i>${op}`; } // own team first, like the rows
+    { const ow = m.score[lt], op = m.score[rt]; $('call').innerHTML = m.practice ? '' : `<b class="own">${ow}</b><i>-</i>${op}`; } // own team first, like the rows
     document.body.classList.toggle('pracmode', !!m.practice); // v11: practice hides the pickleball score (rally points are in the panel)
     $('hdr').textContent = m.practice ? `殺球練習・${DIFF_NAME[m.diff] || ''}${SLOW < 1 ? `・慢動作 ${SLOW}×` : ''}` : `${m.mode === 2 ? '雙打' : '單打'}・${DIFF_NAME[m.diff] || ''}・${m.target}分`;
     const sp = m.players[m.server];
     const sw = m.servingTeam === lt && role !== 'spectator' ? '你方' : m.teamNames[m.servingTeam];
-    $('srv').textContent = m.practice ? (m.phase === 'serve' && PRAC.fed ? '按任一擊球鍵就餵球' : '電腦一直餵高球') : m.mode === 2 ? `報分 ${PB.callText(m)}・${sw}發球 ${sp ? sp.name : ''}` : `${sw}發球・${sp ? sp.name : ''}`;
+    $('srv').textContent = m.practice ? (!PRAC.started ? '按任一鍵開始' : m.phase === 'serve' && PRAC.fed ? '按任一擊球鍵就餵球' : '電腦一直餵高球') : m.mode === 2 ? `報分 ${PB.callText(m)}・${sw}發球 ${sp ? sp.name : ''}` : `${sw}發球・${sp ? sp.name : ''}`;
     measureHud(); requestAnimationFrame(measureHud); // v9: measure now too, so tags drawn this frame already avoid a resized scoreboard
     if (m.practice) requestAnimationFrame(updPrac);
   }
@@ -603,6 +618,7 @@ const inp = { jx: 0, jy: 0, shot: 'drive', shotT: -9, seq: 0 };
 addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT') return;
   keys[e.code] = true; audio(); if (!e.repeat && touchUI && performance.now() - lastTouchAt > 800) setTouch(false);
+  if (!e.repeat && e.code !== 'Escape') pracInput(false);
   const map = { KeyJ: 'drive', Space: 'drive', KeyK: 'dink', KeyL: 'lob', KeyI: 'smash', KeyU: 'smash', KeyZ: 'drive', KeyX: 'dink', KeyC: 'lob', KeyV: 'smash' };
   if (map[e.code] && !e.repeat) { press(map[e.code]); e.preventDefault(); }
   if (e.code === 'Escape' && state === 'play') togglePause();
@@ -612,7 +628,7 @@ addEventListener('keyup', (e) => { keys[e.code] = false; });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
 function press(shot) {
   if (shot === 'smash' && AID.contact && !AID.contact.ok && AID.contact.t < 0.6) lowTip(); // v9: only for the ball actually arriving now (not a stale button state)
-  if (m && m.practice && role === 'local') { if (shot === 'smash') armPress(); else if (m.phase === 'serve') m.feedNow = true; } // practice: any stroke key = feed me
+  if (m && m.practice && role === 'local') { if (shot === 'smash') armPress(); pracInput(true); } // practice: any stroke key = feed me (latched between points)
   inp.shot = shot; inp.shotT = performance.now(); inp.seq++;
   document.querySelectorAll('.tb').forEach((b) => b.classList.toggle('sel', b.dataset.shot === shot));
   if (role === 'client') sendInput(true);
@@ -622,7 +638,7 @@ function press(shot) {
 const joy = { id: null, ox: 0, oy: 0 };
 const jb = $('joyBase'), jk = $('joyKnob'), jz = $('joyZone');
 function joyPos(px, py) { const [cx, cy] = appXY(px, py); const dx = cx - joy.ox, dy = cy - joy.oy, l = Math.hypot(dx, dy), max = 52, k = l > max ? max / l : 1; jk.style.transform = `translate(${dx * k}px,${dy * k}px)`; const n = Math.min(1, l / max); inp.jx = l > 6 ? (dx / l) * n : 0; inp.jy = l > 6 ? (-dy / l) * n : 0; }
-jz.addEventListener('pointerdown', (e) => { audio(); setTouch(true); joy.id = e.pointerId; const r = appRect(jz), [ax, ay] = appXY(e.clientX, e.clientY); joy.ox = ax; joy.oy = ay; jb.style.left = ax - r.left + 'px'; jb.style.top = ay - r.top + 'px'; jb.classList.add('on'); joyPos(e.clientX, e.clientY); try { jz.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); });
+jz.addEventListener('pointerdown', (e) => { audio(); pracInput(false); setTouch(true); joy.id = e.pointerId; const r = appRect(jz), [ax, ay] = appXY(e.clientX, e.clientY); joy.ox = ax; joy.oy = ay; jb.style.left = ax - r.left + 'px'; jb.style.top = ay - r.top + 'px'; jb.classList.add('on'); joyPos(e.clientX, e.clientY); try { jz.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); });
 jz.addEventListener('pointermove', (e) => { if (e.pointerId === joy.id) joyPos(e.clientX, e.clientY); });
 const joyHome = () => { jb.style.left = jb.style.top = ''; jk.style.transform = ''; jb.classList.remove('on'); };
 const joyEnd = (e) => { if (e.pointerId !== joy.id) return; joy.id = null; inp.jx = inp.jy = 0; joyHome(); };
@@ -690,13 +706,14 @@ function startLocal(mode) {
   const seats = seatsLocal(mode); const cfg = { mode, diff: opt.diff, target: opt.target, seats, teamNames: teamNamesOf(seats), firstServe: Math.random() < 0.5 ? 0 : 1 };
   beginMatch(cfg);
 }
-function startPractice() {
+function startPractice(fromUser) {
   role = 'local'; mySeat = 0; R = 1;
-  PRAC.fed = false; SLOW = slowDefault(); ARM.pt = -1;
+  PRAC.fed = false; PRAC.ready = false; PRAC.armNext = false; PRAC.started = !!fromUser || AUTO; SLOW = slowDefault(); ARM.pt = -1;
   const seats = seatsLocal(1); beginMatch({ mode: 1, diff: pracDiffDefault(), target: 999, seats, teamNames: teamNamesOf(seats), firstServe: 1, practice: 'smash' }); updPrac();
+  if (!PRAC.started) setTimeout(() => { if (m && m.practice && !PRAC.started) pracPrompt(); }, 200);
 }
 function beginMatch(cfg) {
-  if (FORCED) setTimeout(() => toast('橫向模式（手機直拿）・☰ 暫停選單可切回直向'), 400); // v10: remembered forced 橫向 is announced
+  if (FORCED && !(cfg.practice && !PRAC.started)) setTimeout(() => toast('橫向模式（手機直拿）・☰ 暫停選單可切回直向'), 400); /* v12: the practice start prompt carries this line instead */ // v10: remembered forced 橫向 is announced
   m = PB.createMatch(cfg); hudSig = ''; slReset(); setTimeout(updPrac, 0); fx.length = 0; trail.length = 0; paused = false;
   for (const p of m.players) { p.rp = { x: p.x, y: p.y }; }
   state = 'play';
@@ -749,7 +766,7 @@ try { $('nick').value = localStorage.pbNick || ''; } catch (_) {}
 $('nick').addEventListener('change', () => { try { localStorage.pbNick = $('nick').value.trim(); } catch (_) {} });
 $('bS1').onclick = () => { audio(); SFX.click(); startLocal(1); };
 $('bS2').onclick = () => { audio(); SFX.click(); startLocal(2); };
-$('bPrac').onclick = () => { audio(); SFX.click(); startPractice(); };
+$('bPrac').onclick = () => { audio(); SFX.click(); startPractice(true); }; // the tap itself is the first input
 function drawPrev() { const cv2 = $('lookPrev'); if (!cv2) return; const g = cv2.getContext('2d'); const L = myLook(); g.clearRect(0, 0, cv2.width, cv2.height); const sh = sheet(L.ch, L.co); if (sh) { const fr = Math.floor(performance.now() / 166) % 4, k = cv2.height / FH; g.drawImage(sh, fr * FW, 0, FW, FH, (cv2.width - FW * k) / 2, 0, FW * k, FH * k); } $('lookName').textContent = CHARS[L.ch].n + '・' + COLN[L.co]; }
 setInterval(() => { if (state === 'menu') drawPrev(); }, 166);
 const showRules = () => $('rules').classList.remove('hide');
@@ -996,7 +1013,7 @@ function frameBody(now) {
     if (role === 'local' || role === 'host') {
       const me = m.players[mySeat]; if (me && me.ctrl === 'local') localInput(me);
       if (hostResumeT > 0) hostResumeT -= dt;
-      if (m.practice) { m.feedWait = PRAC.fed ? 2.5 : 0.8; armTick(me); } // practice: next feed 2.5 s after a point (dead time runs at full speed), or at once on a tap
+      if (m.practice) { pracTick(); armTick(me); } // practice: feed timing (v12 ready latch) and the kept 殺球 press
       if (m.practice) { const tgt = slowNow(me) ? SLOW : 1; TS += (tgt - TS) * (1 - Math.exp(-dt * (tgt < TS ? 14 : 6))); if (Math.abs(TS - tgt) < 0.01) TS = tgt; } else TS = 1;
       if (!paused && !hostAway && !(role === 'host' && hostResumeT > 0)) PB.step(m, dt * TS); // v10/v11: 慢動作 only while the ball is on my side coming at me
       const k = 1 - Math.exp(-dt * 18);
@@ -1012,6 +1029,6 @@ resize();
 function loop(now) { frame(now); requestAnimationFrame(loop); }
 requestAnimationFrame(loop);
 // test hooks
-window.__pb = { looks: () => ({ room, prefs, rs: roomSeats() }), get m() { return m; }, proj, get view() { return { W, H, F, touchUI, port: PORT, pan: PAN, safe: safeRect(), ballR: lastBallR, tags: lastTags, hud: hudBlock, fpsY }; }, showMsg, get state() { return state; }, get role() { return role; }, get room() { return roomCode; }, get roster() { return roster; }, get net() { return net; }, get fps() { return fps; }, get seat() { return mySeat; }, get forced() { return FORCED; }, appRect, appXY, get orient() { return opt.orient; }, hitCount, startLocal, press, juice, get smashLow() { return smashLowNow; }, contactZ: () => contactZ(m && m.players[mySeat]), get lowTipT() { return lowTipT; }, SL, AID, startPractice, setPracDiff, togglePracSet, setSlow, get slow() { return SLOW; }, get ts() { return TS; }, get armed() { return armedNow(); }, ARM, PRAC, fireSmash: (k) => { for (let i = 0; i < k; i++) smashJuice(1); }, freezeJuice: (k) => { FREEZE.armed = true; FREEZE.at = k | 0; FREEZE.left = -1; FREEZE.frozen = false; }, unfreeze: () => { FREEZE.frozen = false; FREEZE.left = -1; FREEZE.armed = false; FREEZE.aidArm = false; }, hold: () => { FREEZE.frozen = true; }, freezeAid: () => { FREEZE.aidArm = true; }, get freezeOn() { return FREEZE.frozen; }, get freeze() { return FREEZE; }, get cards() { return smashCard.n || 0; } };
+window.__pb = { looks: () => ({ room, prefs, rs: roomSeats() }), get m() { return m; }, proj, get view() { return { W, H, F, touchUI, port: PORT, pan: PAN, safe: safeRect(), ballR: lastBallR, tags: lastTags, hud: hudBlock, fpsY, fpsR }; }, showMsg, get state() { return state; }, get role() { return role; }, get room() { return roomCode; }, get roster() { return roster; }, get net() { return net; }, get fps() { return fps; }, get seat() { return mySeat; }, get forced() { return FORCED; }, appRect, appXY, get orient() { return opt.orient; }, hitCount, startLocal, press, juice, get smashLow() { return smashLowNow; }, contactZ: () => contactZ(m && m.players[mySeat]), get lowTipT() { return lowTipT; }, SL, AID, startPractice, setPracDiff, togglePracSet, setSlow, get slow() { return SLOW; }, get ts() { return TS; }, get armed() { return armedNow(); }, ARM, PRAC, fireSmash: (k) => { for (let i = 0; i < k; i++) smashJuice(1); }, freezeJuice: (k) => { FREEZE.armed = true; FREEZE.at = k | 0; FREEZE.left = -1; FREEZE.frozen = false; }, unfreeze: () => { FREEZE.frozen = false; FREEZE.left = -1; FREEZE.armed = false; FREEZE.aidArm = false; }, hold: () => { FREEZE.frozen = true; }, freezeAid: () => { FREEZE.aidArm = true; }, get freezeOn() { return FREEZE.frozen; }, get freeze() { return FREEZE; }, get cards() { return smashCard.n || 0; } };
 if (QS.get('demo') === 'smash') startPractice(); // ?demo=smash opens 殺球練習 directly
 })();

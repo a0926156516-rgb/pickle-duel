@@ -297,3 +297,7 @@ body.pracmode #board .sc,body.pracmode #call{visibility:hidden}
 body.port #prSet{display:inline-block}body.port #prac .pr1{justify-content:flex-start}body.port #prac .pr1 .rp{margin-left:auto}
 #prac.folded .prd{display:none}
 body.port #prac{width:min(306px,calc(100vw - 16px))}body.port #prac .pr2{font-size:12.5px;overflow:hidden}
+/* v12: forced landscape (phone held upright, CSS-rotated) gets the compact, foldable practice panel too */
+body.forced #prSet{display:inline-block}body.forced #prac{width:200px}body.forced #prac .pr1{justify-content:flex-start}body.forced #prac .pr1 .rp{margin-left:auto}
+body.forced #prac.folded .pr2{min-height:0;font-size:10.5px}
+body.forced #prac{width:184px}body.forced #prac.folded .pr2{display:none}

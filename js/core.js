@@ -20,6 +20,10 @@ const DIFF = {
 // (miss: can't get the racket on it, err: mis-hits it into the net / out, weak: pops up a short, high ball). Scaled by the smash's quality.
 const HUMAN = { sig: 0.2, err: 0.012 };
 const SMASH_Z = 0.9, SMASH_ZH = 0.8, SMASH_WAIT = 0.25, SM_LUNGE = +(typeof process !== 'undefined' && process.env && process.env.LUNGE) || 1.6; // 殺球 needs the ball at shoulder height or above (v9: players get a slightly lower 0.8 m bar and a 0.25 s smash window)
+// v13 飛身撲球: a ball just past the normal reach (up to DIVE_EXTRA m further, not above DIVE_ZMAX) that is getting away is saved
+// with a full-length dive. The return is a weak, high sitter; the diver lies on the court for DIVE_T s and then moves slowly until
+// DIVE_STUN s after take-off (no hits during that time). CPU players dive with a per-level chance, decided once per incoming ball.
+const DIVE_EXTRA = 0.95, DIVE_ZMAX = 1.3, DIVE_T = 0.55, DIVE_STUN = 1.15, DIVE_SLOW = 0.35, DIVE_AI = { easy: 0.3, normal: 0.5, hard: 0.7 };
 const HUMAN_REACH = { easy: 1.45, normal: 1.3, hard: 1.08 }; // auto-swing radius multiplier for human players (beginner friendly)
 const teamSign = (t) => (t === 0 ? -1 : 1);
 const sideSign = (t, s) => (t === 0 ? (s === 'R' ? -1 : 1) : (s === 'R' ? 1 : -1));
@@ -167,6 +171,7 @@ function makeShot(m, p, shot, aimY, aiTarget) {
     T = Math.hypot(tx - from.x, ty - from.y) / sp; clr = 0.04; }
   else if (kind === 'drive') { tx = xs * (aiTarget && aiTarget.x ? aiTarget.x : 5.4 + r() * 0.7); const sp = (human ? 12.5 : D.drive) * power; T = Math.hypot(tx - from.x, ty - from.y) / sp; clr = low ? 0.02 : 0.1; }
   else if (kind === 'dink') { tx = xs * (1.05 + r() * 0.75); const d = Math.hypot(tx - from.x, ty - from.y); T = Math.max(0.75, d / 5.8); clr = 0.2; }
+  else if (shot === 'dive') { kind = 'dive'; tx = xs * (1.9 + r() * 2.0); ty = clamp(-p.y * 0.3 + (r() - 0.5) * 2.2, -2.4, 2.4); T = 1.25 + r() * 0.3; clr = 0.75; sig *= 1.2; perr = Math.max(perr * 1.6, 0.12); } // v13 飛撲 save: a weak, high ball (easy for the other side); sometimes it fails
   else if (aiTarget && aiTarget.feed) { kind = 'lob'; tx = xs * (3.6 + r() * 1.8); ty = (r() - 0.5) * 3.2; T = 1.3 + r() * 0.3; clr = 0.6; sig *= 0.5; if (fate !== 'err') perr = 0; } // 殺球練習 feed: a high ball into the smash zone
   else { kind = 'lob'; tx = xs * (5.5 + r() * 0.75); T = 1.5 + r() * 0.35; clr = 0.6; }
   p.popUp = fate === 'weak';
@@ -250,12 +255,31 @@ function onBounce(m) {
 
 function canReach(m, p) {
   const b = m.ball;
-  if (!m.live || m.lastHitTeam === p.team) return false;
+  if (!m.live || m.lastHitTeam === p.team || p.stun > 0) return false;
   if ((b.x < 0 ? 0 : 1) !== p.team) return false;
   if (b.z < 0.06 || b.z > 2.4) return false;
   const f = m.smFate, lunge = p.ctrl === 'ai' && f && f.rally === m.rally && f.team === p.team && f.f !== 'miss' ? SM_LUNGE : 1; // v7: a CPU that reads the smash lunges for it
   const reach = C.REACH * lunge * (b.z > 1.7 ? 0.8 : 1) * (p.ctrl === 'ai' ? 1 : (HUMAN_REACH[m.diff] || 1));
   return Math.hypot(b.x - p.x, b.y - p.y) <= reach;
+}
+function reachOf(m, p) { return C.REACH * (m.ball.z > 1.7 ? 0.8 : 1) * (p.ctrl === 'ai' ? 1 : (HUMAN_REACH[m.diff] || 1)); }
+// v13: can p save this ball with a dive? Only in the band just past the normal reach, for a ball that is getting away from p
+// (distance growing even with p's own run), low enough to dive for, a legal hit, and not a ball that will land out anyway.
+function canDive(m, p) {
+  const b = m.ball;
+  if (!m.live || m.lastHitTeam === p.team || p.stun > 0 || m.practice) return false; // smash practice stays as it was (no dives)
+  if ((b.x < 0 ? 0 : 1) !== p.team || b.z < 0.06 || b.z > DIVE_ZMAX) return false;
+  const dx = b.x - p.x, dy = b.y - p.y, d = Math.hypot(dx, dy), r = reachOf(m, p);
+  if (d <= r || d > r + DIVE_EXTRA) return false;
+  if (dx * (b.vx - (p.vx || 0)) + dy * (b.vy - (p.vy || 0)) <= 0) return false; // still coming closer: a normal swing will get it
+  if (illegal(m, p)) return false;
+  if (m.bounces === 0) { const fb = predict(m).firstBounce; if (fb && isOut(fb.x, fb.y)) return false; } // let a long / wide ball go
+  return true;
+}
+function startDive(m, p) {
+  const b = m.ball, dx = b.x - p.x, dy = b.y - p.y, d = Math.hypot(dx, dy) || 1;
+  p.dive = DIVE_T; p.stun = DIVE_STUN; p.diveX = dx / d; p.diveY = dy / d; p.diveD = d; p.diveL = Math.min(1.4, Math.max(0.5, d - 0.35)); p.diveN = (p.diveN || 0) + 1;
+  (m.dives || (m.dives = [0, 0]))[p.team]++;
 }
 // returns null if legal, else a fault reason
 function illegal(m, p) {
@@ -274,7 +298,7 @@ function doHit(m, p, shot, aimY, aiTarget) {
   const kind = makeShot(m, p, shot, aimY, aiTarget);
   m.hits++; m.rally++; m.bounces = 0; m.lastHitTeam = p.team; m.lastHitter = p.i; m.pred = null;
   if (shot === 'smash' && kind === 'smash') m.smTrack = { team: p.team, p: p.i, touched: 0 };
-  ev(m, { k: 'hit', p: p.i, shot: kind, volley: p.volleyT === m.t, low: p.lowSmash ? 1 : 0, ds: shot === 'smash' && kind === 'smash' ? 1 : 0, pop: p.popUp ? 1 : 0 });
+  ev(m, { k: 'hit', p: p.i, shot: kind, dive: kind === 'dive' ? 1 : 0, dx: kind === 'dive' ? Math.round(p.diveX * 100) / 100 : 0, dy: kind === 'dive' ? Math.round(p.diveY * 100) / 100 : 0, dl: kind === 'dive' ? Math.round(p.diveL * 100) / 100 : 0, volley: p.volleyT === m.t, low: p.lowSmash ? 1 : 0, ds: shot === 'smash' && kind === 'smash' ? 1 : 0, pop: p.popUp ? 1 : 0 });
 }
 function doServe(m, shot, aimY) {
   const p = m.players[m.server], r = m.r, rt = 1 - m.servingTeam, human = p.ctrl !== 'ai';
@@ -308,6 +332,10 @@ function clampPlayer(m, p) {
 }
 function movePlayer(m, p, mx, my, speed, dt) {
   const l = Math.hypot(mx, my); if (l > 1) { mx /= l; my /= l; }
+  if (p.dive > 0) { // v13: the dive itself carries the body toward the ball (decelerating), no steering
+    const v = 2 * (p.diveL || 0) / DIVE_T * (p.dive / DIVE_T); p.vx = (p.diveX || 0) * v; p.vy = (p.diveY || 0) * v;
+    p.x += p.vx * dt; p.y += p.vy * dt; clampPlayer(m, p); if (p.swing > 0) p.swing = Math.max(0, p.swing - dt * 3.2); return; }
+  if (p.stun > 0) speed *= DIVE_SLOW; // getting up after a dive
   const k = 1 - Math.exp(-dt * 14);
   p.vx += (mx * speed - p.vx) * k; p.vy += (my * speed - p.vy) * k;
   p.x += p.vx * dt; p.y += p.vy * dt;
@@ -434,6 +462,7 @@ function sub(m, dt) {
   m.t += dt; m.phaseT += dt;
   if (m.phase === 'over') return;
   for (const p of m.players) {
+    if (p.stun > 0) { p.stun = Math.max(0, p.stun - dt); p.dive = Math.max(0, (p.dive || 0) - dt); } // v13 dive / recovery timers
     if (p.ctrl === 'ai') aiThink(m, p, dt);
     else if (p.ctrl === 'local' || p.ctrl === 'bot') movePlayer(m, p, p.in.mx, p.in.my, C.SPEED, dt);
     else { clampPlayer(m, p); if (p.swing > 0) p.swing = Math.max(0, p.swing - dt * 3.2); } // remote: position comes from network
@@ -494,6 +523,16 @@ function sub(m, dt) {
         doHit(m, p, queued ? p.in.shot : 'drive', p.in.aimOn ? p.in.aim : 0); break;
       }
     }
+    // v13 飛身撲球: nobody could reach it normally -> a player in the dive band throws himself at it (CPU: per-level chance, once per ball)
+    if (m.live && m.lastHitTeam >= 0 && (b.x < 0 ? 0 : 1) !== m.lastHitTeam) for (const p of m.players) {
+      if (!canDive(m, p)) continue;
+      if (p.ctrl === 'ai') {
+        if (p.ai.leave === m.rally || (m.smFate && m.smFate.f === 'miss' && m.smFate.rally === m.rally && m.smFate.team === p.team)) continue;
+        if (p.ai.diveK !== m.rally) { p.ai.diveK = m.rally; p.ai.diveOk = m.r() < (DIVE_AI[m.diff] || 0.5); }
+        if (!p.ai.diveOk) continue;
+      }
+      startDive(m, p); doHit(m, p, 'dive', p.ctrl === 'ai' ? 0 : p.in.aimOn ? p.in.aim : 0); break;
+    }
     // safety: ball far away & slow
     // (v7 fix: a ball that already bounced in and is running away — e.g. a fast smash past a beaten receiver — is the receiver's miss, not the hitter's out)
     if (m.live && Math.abs(b.x) > 16) { if (m.bounces >= 1) fault(m, b.x < 0 ? 0 : 1, '兩次落地（沒接到）', -1); else fault(m, m.lastHitTeam, '出界！', m.lastHitter); }
@@ -504,6 +543,6 @@ function sub(m, dt) {
   }
 }
 
-const API = { C, DIFF, SMASH_Z, SMASH_ZH, SMASH_WAIT, HUMAN_REACH, smashAid, TEAM_NAME, createMatch, step, setupPoint, callText, movePlayer, clampPlayer, teamSign, sideSign, netH, inKitchen, isOut, predict, formation };
+const API = { C, DIFF, SMASH_Z, SMASH_ZH, SMASH_WAIT, HUMAN_REACH, DIVE: { EXTRA: DIVE_EXTRA, ZMAX: DIVE_ZMAX, T: DIVE_T, STUN: DIVE_STUN, SLOW: DIVE_SLOW, AI: DIVE_AI }, canDive, canReach, reachOf, smashAid, TEAM_NAME, createMatch, step, setupPoint, callText, movePlayer, clampPlayer, teamSign, sideSign, netH, inKitchen, isOut, predict, formation };
 if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.PB = API;
 })(typeof self !== 'undefined' ? self : this);

@@ -228,25 +228,35 @@ function drawPlayer(c, p, me) {
   const sh = sheet(p.ch || 0, co);
   let row = 0, fr = Math.floor(now * 6 + p.i) % 4;
   if (spd > 0.5) { row = 1; fr = Math.floor(p.walk) % 6; }
-  c.save(); c.translate(x + face * lunge, y); c.rotate(face * ph * 0.12); c.scale(face * sqx, sqy);
+  // v13 飛身撲球: the body lies along the dive direction (on screen), then gets up while the recovery runs out
+  const DV = PB.DIVE, dv = p.dive > 0 ? 1 : p.stun > 0 ? Math.min(1, p.stun / Math.max(0.01, DV.STUN - DV.T)) : 0;
+  let dsx = 0, lie = 0;
+  if (dv > 0) { const a = proj(pos.x, pos.y, 0), b2 = proj(pos.x + (p.diveX || 0), pos.y + (p.diveY || 0), 0); dsx = b2[0] - a[0] >= 0 ? 1 : -1; const u = p.dive > 0 ? 1 - p.dive / DV.T : 1; lie = (p.dive > 0 ? Math.min(1, u * 4) : dv) * 1.38; }
+  c.save();
+  if (lie > 0) { c.translate(x, y - Math.sin(Math.min(1, lie) * Math.PI) * 6 * k); c.rotate(dsx * lie); c.scale(dsx * 1.12, 0.95); }
+  else { c.translate(x + face * lunge, y); c.rotate(face * ph * 0.12); c.scale(face * sqx, sqy); }
   // paddle arm behind the body when it's swung back
-  const ang = sw > 0 ? (shot === 'smash' ? -2.3 + t * 3.4 : shot === 'serve' ? 1.5 - t * 2.3 : shot === 'lob' ? 1.2 - t * 2.6 : -1.5 + t * 2.5) : 0.75 + Math.sin(now * 2.5 + p.i) * 0.05;
+  const ang = lie > 0.5 ? -1.45 : sw > 0 ? (shot === 'smash' ? -2.3 + t * 3.4 : shot === 'serve' ? 1.5 - t * 2.3 : shot === 'lob' ? 1.2 - t * 2.6 : -1.5 + t * 2.5) : 0.75 + Math.sin(now * 2.5 + p.i) * 0.05;
   const shx = 1 * k, shy = -71 * k, L = 30 * k;
   const drawArm = () => {
     const hx = shx + Math.cos(ang) * L, hy = shy + Math.sin(ang) * L;
-    if (sw > 0) { c.strokeStyle = '#f1c79b'; c.lineCap = 'round'; c.lineWidth = Math.max(1, 6 * k); c.beginPath(); c.moveTo(shx, shy); c.lineTo(hx, hy); c.stroke(); c.fillStyle = col; c.beginPath(); c.arc(hx, hy, Math.max(0, 4.5 * k), 0, 7); c.fill(); }
+    if (sw > 0 || lie > 0.5) { c.strokeStyle = '#f1c79b'; c.lineCap = 'round'; c.lineWidth = Math.max(1, 6 * k); c.beginPath(); c.moveTo(shx, shy); c.lineTo(hx, hy); c.stroke(); c.fillStyle = col; c.beginPath(); c.arc(hx, hy, Math.max(0, 4.5 * k), 0, 7); c.fill(); }
     const px = hx + Math.cos(ang) * 10 * k, py = hy + Math.sin(ang) * 10 * k;
     c.strokeStyle = '#2b2b2b'; c.lineWidth = Math.max(1, 3.4 * k); c.beginPath(); c.moveTo(hx, hy); c.lineTo(px, py); c.stroke();
     c.save(); c.translate(px + Math.cos(ang) * 9 * k, py + Math.sin(ang) * 9 * k); c.rotate(ang);
     c.fillStyle = '#1d2433'; c.strokeStyle = col; c.lineWidth = Math.max(1, 2.4 * k); c.beginPath(); c.ellipse(0, 0, Math.max(0, 11 * k), Math.max(0, 8.5 * k), 0, 0, 7); c.fill(); c.stroke();
     c.fillStyle = 'rgba(255,255,255,.18)'; c.beginPath(); c.ellipse(-2 * k, -2 * k, Math.max(0, 5 * k), Math.max(0, 3 * k), 0, 0, 7); c.fill(); c.restore();
   };
-  const back = sw > 0 && Math.cos(ang) < -0.2;
+  const back = sw > 0 && lie <= 0.5 && Math.cos(ang) < -0.2;
   if (back) drawArm();
   if (sh) c.drawImage(sh, fr * FW, row * FH, FW, FH, -AX * k, -AY * k, FW * k, FH * k);
   else { c.fillStyle = col; c.fillRect(-10 * k, -100 * k, 20 * k, 60 * k); c.beginPath(); c.arc(0, -110 * k, Math.max(0, 12 * k), 0, 7); c.fill(); }
   if (!back) drawArm();
   c.restore();
+  if (p.diveLbl && now - p.diveLbl < 0.95) { // v13: 「飛撲！」 over the diver (world-anchored, reads the same in every layout)
+    const u = (now - p.diveLbl) / 0.95, fs = Math.max(18, Math.min(34, s * 0.4)) | 0; c.save(); c.globalAlpha = u < 0.75 ? 1 : (1 - u) / 0.25;
+    c.font = `900 italic ${fs}px system-ui,sans-serif`; c.textAlign = 'center'; c.lineJoin = 'round'; c.lineWidth = 5; c.strokeStyle = 'rgba(60,30,0,.95)'; c.shadowColor = 'rgba(255,170,40,.9)'; c.shadowBlur = 12;
+    const ty = y - BODY * k * 0.75 - u * 22; c.strokeText('飛撲！', x, ty); c.fillStyle = '#ffd23f'; c.fillText('飛撲！', x, ty); c.restore(); }
   // label
   const nm = (me ? '▼ ' : '') + p.name;
   c.font = `800 ${Math.max(10, Math.min(14, s * 0.2))}px sans-serif`; c.textAlign = 'center';
@@ -308,7 +318,11 @@ function render(dt) {
   // effects on ground
   for (let i = fx.length - 1; i >= 0; i--) {
     const e = fx[i]; e.t += dt; if (e.t > e.d) { fx.splice(i, 1); continue; }
-    if (e.k === 'puff') { e.x += e.vx * dt; e.y += e.vy * dt; e.z = Math.max(0, e.z + e.vz * dt); e.vz -= 6 * dt; const pq = proj(e.x, e.y, e.z), kk = e.t / e.d; ctx.fillStyle = `rgba(255,255,255,${0.85 * (1 - kk)})`; ctx.beginPath(); ctx.arc(pq[0], pq[1], Math.max(0.5, pq[2] * 0.035 * (1 - kk * 0.5)), 0, 7); ctx.fill(); continue; }
+    if (e.k === 'puff') { e.x += e.vx * dt; e.y += e.vy * dt; e.z = Math.max(0, e.z + e.vz * dt); e.vz -= 6 * dt; const pq = proj(e.x, e.y, e.z), kk = e.t / e.d; ctx.fillStyle = e.dust ? `rgba(225,200,160,${0.8 * (1 - kk)})` : `rgba(255,255,255,${0.85 * (1 - kk)})`; ctx.beginPath(); ctx.arc(pq[0], pq[1], Math.max(0.5, pq[2] * (e.dust ? 0.06 : 0.035) * (1 - kk * 0.5)), 0, 7); ctx.fill(); continue; }
+    if (e.k === 'skid') { const k2 = e.t / e.d, a = proj(e.x, e.y, 0), pl = e.p, bq = proj(pl.rp ? pl.rp.x : pl.x, pl.rp ? pl.rp.y : pl.y, 0); if (pl.dive > 0) { e.x1 = bq[0]; e.y1 = bq[1]; }
+      ctx.save(); ctx.lineCap = 'round'; ctx.strokeStyle = `rgba(214,190,150,${0.55 * (1 - k2)})`; ctx.lineWidth = Math.max(3, a[2] * 0.16); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(e.x1 != null ? e.x1 : a[0], e.y1 != null ? e.y1 : a[1]); ctx.stroke(); ctx.restore();
+      if (pl.dive > 0 && Math.random() < 0.7) fx.push({ k: 'puff', x: pl.x, y: pl.y, z: 0.02, vx: -(pl.diveX || 0) * (0.4 + Math.random() * 0.6) + (Math.random() - 0.5) * 0.6, vy: -(pl.diveY || 0) * (0.4 + Math.random() * 0.6) + (Math.random() - 0.5) * 0.6, vz: 0.5 + Math.random() * 0.9, t: 0, d: 0.4 + Math.random() * 0.25, dust: 1 });
+      continue; }
     const q = proj(e.x, e.y, 0), k = e.t / e.d, s = q[2];
     if (e.k === 'ring') { ctx.strokeStyle = e.out ? `rgba(255,70,70,${1 - k})` : `rgba(255,255,255,${0.8 * (1 - k)})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(q[0], q[1], Math.max(0, s * (0.1 + k * 0.4)), Math.max(0, s * (0.035 + k * 0.14)), 0, 0, 7); ctx.stroke();
       if (e.out) { ctx.fillStyle = `rgba(255,70,70,${1 - k})`; ctx.font = `900 ${s * 0.3}px sans-serif`; ctx.textAlign = 'center'; ctx.fillText('OUT', q[0], q[1] - s * 0.2); } }
@@ -364,6 +378,22 @@ function renderSmash() {
   N(0.09, 0.75, 3400); T(1800, 0.05, 'square', 0.16, 320); T(120, 0.24, 'sine', 0.6, 42); N(0.28, 0.28, 800, 0.03);
   smashBufP = o.startRendering().then((b) => { smashBuf = b; }).catch(() => {});
 }
+// v13: the 飛撲 sound (whoosh + body thud + skid) is rendered the same way and shares the 8-voice pool
+let diveBuf = null, diveBufP = null;
+function renderDive() {
+  if (diveBufP || !AC) return; const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext; if (!OAC) return;
+  const sr = AC.sampleRate, o = new OAC(1, Math.ceil(sr * 0.5), sr);
+  const N = (d, vol, fc, delay, q) => { const t = delay || 0, nb = o.createBuffer(1, Math.ceil(sr * d), sr), a = nb.getChannelData(0); for (let i = 0; i < a.length; i++) a[i] = Math.random() * 2 - 1; const sN = o.createBufferSource(), f = o.createBiquadFilter(), g = o.createGain(); sN.buffer = nb; f.type = 'bandpass'; f.frequency.value = fc; f.Q.value = q || 1.2; g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + d * 0.3); g.gain.exponentialRampToValueAtTime(0.0001, t + d); sN.connect(f).connect(g).connect(o.destination); sN.start(t); };
+  const T = (f, d, vol, f2, delay) => { const t = delay || 0, os = o.createOscillator(), g = o.createGain(); os.type = 'sine'; os.frequency.setValueAtTime(f, t); if (f2) os.frequency.exponentialRampToValueAtTime(f2, t + d); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.006); g.gain.exponentialRampToValueAtTime(0.0001, t + d); os.connect(g).connect(o.destination); os.start(t); };
+  N(0.18, 0.5, 1400, 0, 0.7); T(90, 0.2, 0.55, 45, 0.16); N(0.26, 0.3, 500, 0.18, 0.9);
+  diveBufP = o.startRendering().then((b) => { diveBuf = b; }).catch(() => {});
+}
+function diveVoice() { juice.diveSfx = (juice.diveSfx || 0) + 1; if (!AC || !sound) return; renderDive(); if (!diveBuf) { noise(0.18, 0.5, 1400); tone(90, 0.2, 'sine', 0.55, 45, 0.16); return; } playVoice(diveBuf); }
+function playVoice(buf) {
+  const t = AC.currentTime; let v = VOICES.find((q) => q.end <= t);
+  if (!v) { if (VOICES.length < 8) { const g = AC.createGain(); g.connect(AC.destination); v = { g, src: null, end: 0 }; VOICES.push(v); } else { v = VOICES.reduce((a, b) => (a.end < b.end ? a : b)); try { v.src.stop(); } catch (_) {} juice.sfxStolen = (juice.sfxStolen || 0) + 1; } }
+  const src = AC.createBufferSource(); src.buffer = buf; src.connect(v.g); v.g.gain.setValueAtTime(1, t); v.src = src; v.end = t + buf.duration; src.start(t); juice.voices = VOICES.length; return src;
+}
 function smashVoice() {
   if (!AC || !sound) { juice.sfxMuted = (juice.sfxMuted || 0) + 1; juice.sfx++; return; }
   renderSmash();
@@ -382,7 +412,8 @@ const SFX = {
   side: () => { tone(520, 0.14, 'triangle', 0.22); tone(390, 0.22, 'triangle', 0.22, null, 0.12); },
   win: () => { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.3, 'triangle', 0.25, null, i * 0.13)); },
   click: () => tone(700, 0.05, 'sine', 0.15),
-  smash: () => smashVoice()
+  smash: () => smashVoice(),
+  dive: () => diveVoice()
 };
 $('bSound').onclick = () => { sound = !sound; try { localStorage.pbSound = sound ? '1' : '0'; } catch (_) {} $('bSound').textContent = sound ? '🔊' : '🔇'; audio(); };
 $('bSound').textContent = sound ? '🔊' : '🔇';
@@ -433,6 +464,25 @@ const juice = { shake: 0, flash: 0, n: 0, sfx: 0, amp: 0, ox: 0, oy: 0 };
 let lowTipT = 0, smashLowNow = false;
 const FREEZE = { armed: false, at: 0, left: -1, frozen: false }; // test hook: hold the exact frame N frames after a smash triggers
 const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// v13 飛身撲球 juice: pose (from core state; clients take it from the event), skid + dust, 「飛撲！」, sound, light shake
+function diveJuice(e) {
+  const p = m.players[e.p]; if (!p) return; juice.dives = (juice.dives || 0) + 1;
+  if (!(p.dive > 0)) { p.dive = PB.DIVE.T; p.stun = PB.DIVE.STUN; p.diveX = e.dx; p.diveY = e.dy; p.diveL = e.dl || 0.8; } // clients / spectators
+  p.diveLbl = performance.now() / 1000;
+  fx.push({ k: 'skid', x: p.x, y: p.y, p, t: 0, d: 1.1 });
+  for (let n = 0; n < 10; n++) { const a = Math.random() * 7, sp = 0.5 + Math.random(); fx.push({ k: 'puff', x: p.x, y: p.y, z: 0.03, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vz: 0.7 + Math.random() * 1.2, t: 0, d: 0.5 + Math.random() * 0.3, dust: 1 }); }
+  if (FREEZE.armedDive) { FREEZE.armedDive = false; FREEZE.left = FREEZE.at; }
+  SFX.hit('dink'); SFX.dive(); if (juice.shake < 0.16) { juice.shake = 0.16; juice.amp = RM ? 0 : 3; }
+}
+// test hook (v13): a ball that already bounced on player i's side, `extra` m past i's normal reach, running away sideways
+function setupDive(i, extra, z, sp) {
+  const p = m && m.players[i]; if (!p) return null; const o = 1 - p.team, xs = PB.teamSign(p.team), dy = p.y > 0.3 ? -1 : 1;
+  m.phase = 'rally'; m.phaseT = 0; m.live = true; m.hits = 5; m.rally += 2; m.bounces = 1; m.lastHitTeam = o; m.lastHitter = m.players.find((q) => q.team === o).i; m.pred = null; m.smFate = null; m.smTrack = null;
+  p.stun = 0; p.dive = 0; p.vx = p.vy = 0; if (p.ai) { p.ai.diveK = m.rally; p.ai.diveOk = true; p.ai.leave = -1; }
+  const b = m.ball; m.ball.z = z == null ? 0.55 : z; const r = PB.reachOf(m, p) + (extra == null ? 0.45 : extra);
+  Object.assign(b, { x: p.x + xs * 0.2, y: p.y + dy * Math.sqrt(Math.max(0, r * r - 0.04)), vx: xs * 0.6, vy: dy * (sp || 3.2), vz: 1.2 });
+  return { reach: PB.reachOf(m, p), d: r };
+}
 function smashJuice(ds) { if (FREEZE.armed) { FREEZE.armed = false; FREEZE.left = FREEZE.at; } juice.n++; juice.shake = ds ? 0.32 : 0.22; juice.amp = RM ? 0 : ds ? 7 : 4; juice.flash = ds ? 0.3 : 0.16; SFX.smash(); }
 // v8: the 殺球 button's low state follows the PREDICTED contact: only for a ball coming to my side that I can legally reach in
 // time; a new state must hold for 0.35 s before it shows, and it changes at most once per incoming shot.
@@ -553,7 +603,7 @@ function lowTip() { lowTipT = performance.now() + 1300; }
 function handleEvent(e) {
   if (!m) return;
   switch (e.k) {
-    case 'hit': slIncoming(e); if (e.feed) PRAC.fed = true; hitCount[e.p] = (hitCount[e.p] || 0) + 1; if (e.shot === 'smash') smashJuice(e.ds); else SFX.hit(e.shot); if (e.low && e.p === mySeat) lowTip(); if (e.p != null && m.players[e.p]) { m.players[e.p].swing = 1; m.players[e.p].swingShot = e.shot; } break;
+    case 'hit': slIncoming(e); if (e.feed) PRAC.fed = true; hitCount[e.p] = (hitCount[e.p] || 0) + 1; if (e.shot === 'smash') smashJuice(e.ds); else if (e.dive) diveJuice(e); else SFX.hit(e.shot); if (e.low && e.p === mySeat) lowTip(); if (e.p != null && m.players[e.p]) { m.players[e.p].swing = 1; m.players[e.p].swingShot = e.shot; } break;
     case 'serve': slIncoming(e); SFX.hit('drive'); if (m.players[e.p]) { m.players[e.p].swing = 1; m.players[e.p].swingShot = 'serve'; } break;
     case 'bounce': if (!e.dead) SFX.bounce(); fx.push({ k: 'ring', x: e.x, y: e.y, t: 0, d: 0.9, out: PB.isOut(e.x, e.y) && !e.dead }); for (let n = 0; n < 9; n++) { const a = Math.random() * 7, sp = 0.6 + Math.random() * 1.2; fx.push({ k: 'puff', x: e.x, y: e.y, z: 0.03, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vz: 0.8 + Math.random() * 1.4, t: 0, d: 0.45 + Math.random() * 0.25 }); } break;
     case 'net': SFX.net(); break;
@@ -907,7 +957,7 @@ function hostBackToRoom() { wsend({ t: 'lobbyBack' }); toAll({ t: 'room' }); m =
 const r3 = (v) => Math.round(v * 1000) / 1000, r2 = (v) => Math.round(v * 100) / 100;
 function snapshot(full) {
   const b = m.ball;
-  return { t: 's', pt: m.point, ph: m.phase, pT: r2(m.phaseT), mt: r2(m.t), b: [r3(b.x), r3(b.y), r3(b.z), r3(b.vx), r3(b.vy), r3(b.vz)], P: m.players.map((p) => [r2(p.x), r2(p.y), r2(p.swing), p.swingShot]), sc: m.score, st: m.servingTeam, sn: m.serverNum, sv: m.server, rv: m.receiver, sd: m.sides.join(''), h: m.hits, bo: m.bounces, lh: m.lastHitTeam, lv: m.live ? 1 : 0, w: m.winner, rl: m.rally, ev: full ? [] : outbox.splice(0) };
+  return { t: 's', pt: m.point, ph: m.phase, pT: r2(m.phaseT), mt: r2(m.t), b: [r3(b.x), r3(b.y), r3(b.z), r3(b.vx), r3(b.vy), r3(b.vz)], P: m.players.map((p) => [r2(p.x), r2(p.y), r2(p.swing), p.swingShot, r2(p.dive || 0), r2(p.stun || 0), r2(p.diveX || 0), r2(p.diveY || 0), r2(p.diveL || 0)]), sc: m.score, st: m.servingTeam, sn: m.serverNum, sv: m.server, rv: m.receiver, sd: m.sides.join(''), h: m.hits, bo: m.bounces, lh: m.lastHitTeam, lv: m.live ? 1 : 0, w: m.winner, rl: m.rally, ev: full ? [] : outbox.splice(0) };
 }
 function hostTick(dt) {
   sendAcc += dt; if (sendAcc < 1 / 30) return; sendAcc = 0;
@@ -955,6 +1005,7 @@ function applySnap(d) {
   const jump = Math.hypot(pb.x - b.x, pb.y - b.y, pb.z - b.z);
   if (jump < 1.2 && d.ph === 'rally') { ballOff.x = pb.x - b.x; ballOff.y = pb.y - b.y; ballOff.z = pb.z - b.z; } else ballOff.x = ballOff.y = ballOff.z = 0;
   d.P.forEach((q, i) => { const p = m.players[i]; if (!p) return;
+    if (q.length > 4) { p.dive = q[4]; p.stun = q[5]; if (q[4] > 0 || q[5] > 0) { p.diveX = q[6]; p.diveY = q[7]; p.diveL = q[8]; } } // v13: the host's dive / recovery state
     if (i === mySeat && role === 'client') { if (newPoint || Math.hypot(p.x - q[0], p.y - q[1]) > 2) { p.x = q[0]; p.y = q[1]; p.vx = p.vy = 0; p.rp = { x: p.x, y: p.y }; } return; }
     p.tx = q[0]; p.ty = q[1]; if (newPoint || !p.rp) p.rp = { x: q[0], y: q[1] };
     if (q[2] > p.swing + 0.3) { p.swing = q[2]; p.swingShot = q[3]; } });
@@ -977,6 +1028,7 @@ function clientTick(dt) {
   if (state === 'play' && !waitOn && performance.now() - lastSnapAt > 1600) showWait(true, '沒有收到房主的畫面，等待中…'); // host frozen without a visibility event (e.g. iOS)
   // own movement (client-side prediction), others interpolate, ball dead-reckoning
   for (const p of m.players) {
+    if (p.stun > 0) { p.stun = Math.max(0, p.stun - dt); p.dive = Math.max(0, (p.dive || 0) - dt); } // v13: run the dive timers between snapshots
     if (p.i === mySeat && role === 'client') { const mv = localInput(p); PB.movePlayer(m, p, mv.mx, mv.my, C.SPEED, dt); p.rp = { x: p.x, y: p.y }; continue; }
     if (p.tx == null) continue; const k = 1 - Math.exp(-dt * 16);
     const nx = p.rp.x + (p.tx - p.rp.x) * k, ny = p.rp.y + (p.ty - p.rp.y) * k;
@@ -1029,6 +1081,6 @@ resize();
 function loop(now) { frame(now); requestAnimationFrame(loop); }
 requestAnimationFrame(loop);
 // test hooks
-window.__pb = { looks: () => ({ room, prefs, rs: roomSeats() }), get m() { return m; }, proj, get view() { return { W, H, F, touchUI, port: PORT, pan: PAN, safe: safeRect(), ballR: lastBallR, tags: lastTags, hud: hudBlock, fpsY, fpsR }; }, showMsg, get state() { return state; }, get role() { return role; }, get room() { return roomCode; }, get roster() { return roster; }, get net() { return net; }, get fps() { return fps; }, get seat() { return mySeat; }, get forced() { return FORCED; }, appRect, appXY, get orient() { return opt.orient; }, hitCount, startLocal, press, juice, get smashLow() { return smashLowNow; }, contactZ: () => contactZ(m && m.players[mySeat]), get lowTipT() { return lowTipT; }, SL, AID, startPractice, setPracDiff, togglePracSet, setSlow, get slow() { return SLOW; }, get ts() { return TS; }, get armed() { return armedNow(); }, ARM, PRAC, fireSmash: (k) => { for (let i = 0; i < k; i++) smashJuice(1); }, freezeJuice: (k) => { FREEZE.armed = true; FREEZE.at = k | 0; FREEZE.left = -1; FREEZE.frozen = false; }, unfreeze: () => { FREEZE.frozen = false; FREEZE.left = -1; FREEZE.armed = false; FREEZE.aidArm = false; }, hold: () => { FREEZE.frozen = true; }, freezeAid: () => { FREEZE.aidArm = true; }, get freezeOn() { return FREEZE.frozen; }, get freeze() { return FREEZE; }, get cards() { return smashCard.n || 0; } };
+window.__pb = { looks: () => ({ room, prefs, rs: roomSeats() }), get m() { return m; }, proj, get view() { return { W, H, F, touchUI, port: PORT, pan: PAN, safe: safeRect(), ballR: lastBallR, tags: lastTags, hud: hudBlock, fpsY, fpsR }; }, showMsg, get state() { return state; }, get role() { return role; }, get room() { return roomCode; }, get roster() { return roster; }, get net() { return net; }, get fps() { return fps; }, get seat() { return mySeat; }, get forced() { return FORCED; }, appRect, appXY, get orient() { return opt.orient; }, hitCount, startLocal, press, juice, get smashLow() { return smashLowNow; }, contactZ: () => contactZ(m && m.players[mySeat]), get lowTipT() { return lowTipT; }, SL, AID, startPractice, setPracDiff, togglePracSet, setSlow, get slow() { return SLOW; }, get ts() { return TS; }, get armed() { return armedNow(); }, ARM, PRAC, fireSmash: (k) => { for (let i = 0; i < k; i++) smashJuice(1); }, freezeJuice: (k) => { FREEZE.armed = true; FREEZE.at = k | 0; FREEZE.left = -1; FREEZE.frozen = false; }, freezeDive: (k) => { FREEZE.armedDive = true; FREEZE.at = k | 0; FREEZE.left = -1; FREEZE.frozen = false; }, setupDive, unfreeze: () => { FREEZE.frozen = false; FREEZE.left = -1; FREEZE.armed = false; FREEZE.aidArm = false; FREEZE.armedDive = false; }, hold: () => { FREEZE.frozen = true; }, freezeAid: () => { FREEZE.aidArm = true; }, get freezeOn() { return FREEZE.frozen; }, get freeze() { return FREEZE; }, get cards() { return smashCard.n || 0; } };
 if (QS.get('demo') === 'smash') startPractice(); // ?demo=smash opens 殺球練習 directly
 })();

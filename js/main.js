@@ -76,7 +76,7 @@ let touchUI = false;
 function safeRect() {
   const land = W >= H, tu = (touchUI || COARSE) && state === 'play';
   if (PORT) { // controls live below the court
-    const top = H < 700 ? 106 : 114, bottom = tu ? (H < 780 ? 186 : 214) : 8; // v6: four bigger shot buttons
+    const top = H < 700 ? 106 : 114, bottom = tu ? (H < 780 ? 186 : 214) : state === 'play' ? 64 : 8; // v6: four bigger shot buttons; v14: keyboard portrait keeps the key help below the court
     return { l: 6, r: W - 6, t: top, b: H - bottom };
   }
   const left = tu ? Math.min(118, W * 0.15) : 8, right = tu ? Math.min(166, W * 0.24) : 8; // right: zig-zag column of 4 shot buttons
@@ -101,7 +101,7 @@ function resize() {
   // fit the court (and players standing on it) into the area not covered by HUD / touch controls
   const S = safeRect(); let minx = 1e9, maxx = -1e9, miny = 1e9, maxy = -1e9;
   const pts = [];
-  if (PORT) { for (const U of [-C.HW - 0.25, C.HW + 0.25]) for (const V of [-C.K - 0.6, C.HL + 0.25]) pts.push([U, V, 0]); pts.push([0, -C.HL - 0.5, 0]); for (const U of [-C.HW, C.HW]) pts.push([U, C.HL, 2.0]); pts.push([0, C.HL + 0.6, 3.0]); } // far players' heads + name tags stay below the HUD
+  if (PORT) { for (const U of [-C.HW - 0.25, C.HW + 0.25]) for (const V of [-C.K - 0.6, C.HL + 0.25]) pts.push([U, V, 0]); pts.push([0, -C.HL - (touchUI || COARSE ? 0.5 : 1.1), 0]); for (const U of [-C.HW, C.HW]) pts.push([U, C.HL, 2.0]); pts.push([0, C.HL + 0.6, 3.0]); } // far players' heads + name tags stay below the HUD
   else { const bx = touchUI || W < 960 ? 0.4 : 1.3; for (const X of [-C.HL - bx, C.HL + bx]) for (const Y of [-C.HW - 0.5, C.HW + 0.3]) pts.push([X, Y, 0]); /* v10: on big screens a little room behind each baseline; phones keep the big court (the camera slides instead) */ for (const X of [-C.HL, C.HL]) pts.push([X, C.HW + 0.4, 2.1]); }
   for (const [X, Y, z] of pts) { const g = g2(X, Y); const sx = g[0], sy = g[1] + z * g[2] * KZ; minx = Math.min(minx, sx); maxx = Math.max(maxx, sx); miny = Math.min(miny, sy); maxy = Math.max(maxy, sy); }
   const aw = Math.max(40, S.r - S.l), ah = Math.max(40, S.b - S.t);
@@ -256,7 +256,8 @@ function drawPlayer(c, p, me) {
   if (p.diveLbl && now - p.diveLbl < 0.95) { // v13: 「飛撲！」 over the diver (world-anchored, reads the same in every layout)
     const u = (now - p.diveLbl) / 0.95, fs = Math.max(18, Math.min(34, s * 0.4)) | 0; c.save(); c.globalAlpha = u < 0.75 ? 1 : (1 - u) / 0.25;
     c.font = `900 italic ${fs}px system-ui,sans-serif`; c.textAlign = 'center'; c.lineJoin = 'round'; c.lineWidth = 5; c.strokeStyle = 'rgba(60,30,0,.95)'; c.shadowColor = 'rgba(255,170,40,.9)'; c.shadowBlur = 12;
-    const ty = y - BODY * k * 0.75 - u * 22; c.strokeText('飛撲！', x, ty); c.fillStyle = '#ffd23f'; c.fillText('飛撲！', x, ty); c.restore(); }
+    const ty = y - BODY * k * 0.75 - u * 22; c.strokeText('飛撲！', x, ty); c.fillStyle = '#ffd23f'; c.fillText('飛撲！', x, ty); const lw = c.measureText('飛撲！').width; p.diveLblR = { l: x - lw / 2, t: ty - fs, r: x + lw / 2, b: ty + 4 }; c.restore(); }
+  if (p.diveLbl && now - p.diveLbl < 0.95) return; // v14: while 「飛撲！」 shows, it takes the name tag's place (no overlap)
   // label
   const nm = (me ? '▼ ' : '') + p.name;
   c.font = `800 ${Math.max(10, Math.min(14, s * 0.2))}px sans-serif`; c.textAlign = 'center';
@@ -345,7 +346,14 @@ function render(dt) {
   const draw = (o) => (o.k === 'p' ? drawPlayer(ctx, o.p, o.p.i === mySeat && role !== 'spectator') : drawBall(ctx, bv));
   const farBall = objs.find((o) => o.k === 'b');
   // the net is drawn under everything except objects on the far side of it that are low enough to be hidden by it
+  if (saveTrail.pts.length || saveTrail.on) { // v14 save trail
+    if (saveTrail.on) { saveTrail.pts.push({ x: b.x, y: b.y, z: b.z }); if (saveTrail.pts.length > 150 || m.phase !== 'rally') saveTrail.on = false; } else { saveTrail.fade += dt || 0.016; if (saveTrail.fade > 0.8) saveTrail.pts = []; }
+    if (saveTrail.pts.length > 1) { ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = `rgba(255,226,120,${0.4 * (1 - Math.min(1, saveTrail.fade / 0.8))})`; ctx.lineWidth = Math.max(2, lastBallR * 0.55); ctx.setLineDash([lastBallR * 0.9, lastBallR * 0.7]); ctx.beginPath();
+      saveTrail.pts.forEach((q, i) => { const a = proj(q.x, q.y, q.z); if (i) ctx.lineTo(a[0], a[1]); else ctx.moveTo(a[0], a[1]); }); ctx.stroke(); ctx.restore(); } }
   drawNet(ctx); objs.forEach(draw); void farBall;
+  for (let i = pops.length - 1; i >= 0; i--) { const o = pops[i]; o.t += dt || 0.016; if (o.t > 1.4) { pops.splice(i, 1); continue; } // v14 救球成功／失敗
+    const a = proj(o.x, o.y, 0), s = a[2], fs = Math.max(16, Math.min(28, s * 0.32)) | 0, ty = a[1] - s * 1.72 * KZ * (PORT || H < 430 ? 1.32 : 1) * 1.06 - 26 - o.t * 16; /* above the name tag */ ctx.save(); ctx.globalAlpha = o.t < 1.1 ? 1 : (1.4 - o.t) / 0.3;
+    ctx.font = `900 ${fs}px system-ui,sans-serif`; ctx.textAlign = 'center'; ctx.lineJoin = 'round'; ctx.lineWidth = 4; ctx.strokeStyle = o.ok ? 'rgba(0,70,40,.95)' : 'rgba(80,0,20,.95)'; ctx.strokeText(o.text, a[0], ty); ctx.fillStyle = o.ok ? '#7dffb0' : '#ff8a9a'; ctx.fillText(o.text, a[0], ty); const pw = ctx.measureText(o.text).width; o.r = { l: a[0] - pw / 2, t: ty - fs, r: a[0] + pw / 2, b: ty + 4 }; ctx.restore(); }
   if (m.phase === 'rally' || m.phase === 'dead') { trail.push({ ...bv }); if (trail.length > 12) trail.shift(); } else trail.length = 0;
   if (juice.flash > 0) { ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.fillStyle = `rgba(255,240,250,${Math.min(0.32, juice.flash)})`; ctx.fillRect(0, 0, W, H); juice.flash = Math.max(0, juice.flash - (dt || 0.016) * 1.3); }
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -464,11 +472,18 @@ const juice = { shake: 0, flash: 0, n: 0, sfx: 0, amp: 0, ox: 0, oy: 0 };
 let lowTipT = 0, smashLowNow = false;
 const FREEZE = { armed: false, at: 0, left: -1, frozen: false }; // test hook: hold the exact frame N frames after a smash triggers
 const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// v14: faint arc trail of the save, and 「救球成功！」/「救球失敗」 once the rally after a dive is decided
+const saveTrail = { pts: [], on: false, fade: 0 }; let savePend = null; const pops = [];
+function savePop(e) { if (!savePend || !m) return; const p = m.players[savePend.p], ok = e.team !== savePend.team; savePend = null; saveTrail.on = false; if (!p) return;
+  pops.push({ text: ok ? '救球成功！' : '救球失敗', ok, x: p.x, y: p.y, t: 0, i: p.i }); juice.savePops = juice.savePops || { ok: 0, fail: 0 }; juice.savePops[ok ? 'ok' : 'fail']++; }
 // v13 飛身撲球 juice: pose (from core state; clients take it from the event), skid + dust, 「飛撲！」, sound, light shake
 function diveJuice(e) {
   const p = m.players[e.p]; if (!p) return; juice.dives = (juice.dives || 0) + 1;
   if (!(p.dive > 0)) { p.dive = PB.DIVE.T; p.stun = PB.DIVE.STUN; p.diveX = e.dx; p.diveY = e.dy; p.diveL = e.dl || 0.8; } // clients / spectators
   p.diveLbl = performance.now() / 1000;
+  if (m.practice) requestAnimationFrame(updPrac); // 飛撲練習 counter
+  saveTrail.pts = []; saveTrail.on = true; saveTrail.fade = 0; savePend = { team: p.team, p: e.p }; juice.trails = (juice.trails || 0) + 1;
+  if (e.p === mySeat && role !== 'spectator') { let seen = false; try { seen = localStorage.pbDiveTip === '1'; localStorage.pbDiveTip = '1'; } catch (_) {} if (!seen) { juice.diveTip = (juice.diveTip || 0) + 1; toast('球太遠時會自動飛身撲球！'); } } // v14: one-time tip
   fx.push({ k: 'skid', x: p.x, y: p.y, p, t: 0, d: 1.1 });
   for (let n = 0; n < 10; n++) { const a = Math.random() * 7, sp = 0.5 + Math.random(); fx.push({ k: 'puff', x: p.x, y: p.y, z: 0.03, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vz: 0.7 + Math.random() * 1.2, t: 0, d: 0.5 + Math.random() * 0.3, dust: 1 }); }
   if (FREEZE.armedDive) { FREEZE.armedDive = false; FREEZE.left = FREEZE.at; }
@@ -547,7 +562,7 @@ function pracTick() {
   m.deadT = PRAC.ready ? 0.5 : 0.9;                          // v12: the point-scored pause (matches use 1.9 s)
   if (m.phase === 'serve') { if (PRAC.armNext) { PRAC.armNext = false; ARM.pt = m.point; ARM.h = 4; } if (PRAC.ready) { PRAC.ready = false; m.feedNow = true; } }
 }
-function pracPrompt() { showMsg('看到「現在！」就按殺球', FORCED ? '按任一鍵開始・橫向模式（☰ 可切回直向）' : '按任一鍵開始', 'info', 600000); $('msg').dataset.pr = '1'; }
+function pracPrompt() { showMsg(m && m.practice === 'dive' ? '球太遠時會自動飛身撲球' : '看到「現在！」就按殺球', FORCED ? '按任一鍵開始・橫向模式（☰ 可切回直向）' : '按任一鍵開始', 'info', 600000); $('msg').dataset.pr = '1'; }
 function armTick(me) {
   if (!armedNow() || m.phase !== 'rally') { ARM.on = false; return; }
   if (PB.inKitchen(me)) { if (ARM.on) { me.in.shotT = -9; ARM.on = false; } return; } // never commit a kitchen volley for you
@@ -566,8 +581,8 @@ function updPrac() {
   const s = m.smStats[teamOf(mySeat)];
   { const bd = $('board'); if (bd) { const r = appRect(bd); if (r.height) { el.style.setProperty('--pracy', Math.round(r.bottom + 6) + 'px'); el.style.setProperty('--pracw', Math.round(r.width) + 'px'); } } }
   if (!el.firstChild) {
-    el.innerHTML = '<div class="pr1"><b>殺球練習</b><span class="rp" id="prRP" title="練習每一球都計分（rally scoring）">你 <i id="prMe">0</i> : <i id="prOp">0</i> 對手</span><button id="prSet" aria-expanded="false" aria-label="練習設定：難度與慢動作">設定 ▾</button></div>'
-      + '<div class="prr"><span class="rate" id="prRateL"></span><small class="incl" title="致勝率 =（致勝 + 逼失誤）÷ 殺球">含逼失誤</small></div><div class="pr2" id="prDet"></div>'
+    el.innerHTML = '<div class="pr1"><b id="prTitle">殺球練習</b><span class="rp" id="prRP" title="練習每一球都計分（rally scoring）">你 <i id="prMe">0</i> : <i id="prOp">0</i> 對手</span><button id="prSet" aria-expanded="false" aria-label="練習設定：難度與慢動作">設定 ▾</button></div>'
+      + '<div class="prr"><span class="rate" id="prRateL"></span><small class="incl" id="prIncl" title="致勝率 =（致勝 + 逼失誤）÷ 殺球">含逼失誤</small></div><div class="pr2" id="prDet"></div>'
       + '<div class="prd" id="prDiff"><button data-d="easy">簡單</button><button data-d="normal">普通</button><button data-d="hard">困難</button></div>'
       + '<div class="prd prs" id="prSlow"><span>慢動作</span><button data-s="1">關</button><button data-s="0.5">0.5×</button><button data-s="0.35">0.35×</button></div>';
     let setT = 0; // a touch tap fires pointerdown and then a click (detail 0 in some browsers): toggle once
@@ -578,9 +593,18 @@ function updPrac() {
     $('prDiff').addEventListener('pointerdown', (e) => { const b = e.target.closest('button'); if (!b) return; e.preventDefault(); e.stopPropagation(); setPracDiff(b.dataset.d); });
     $('prDiff').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b && e.detail === 0) setPracDiff(b.dataset.d); }); // keyboard
   }
-  if (s.n) $('prRateL').innerHTML = `致勝率 <i id="prRate">${Math.round(100 * (s.win + s.forced) / s.n)}%</i>`; else $('prRateL').innerHTML = '<i id="prRate" class="none">尚未殺球</i>';
+  $('prTitle').textContent = PRAC_NAME[m.practice] || '練習';
+  if (m.practice === 'dive') { // v14 飛撲練習: saves / dives / misses
+    const d = m.dvStats, done = d.saves + d.fails + d.miss + d.reach;
+    $('prRateL').innerHTML = done ? `救回率 <i id="prRate">${Math.round(100 * d.saves / done)}%</i>` : '<i id="prRate" class="none">尚未飛撲</i>';
+    $('prIncl').textContent = '救回 ÷ 餵球'; $('prIncl').title = '救回率 = 飛撲救回（回球落在對面場內）÷ 已結束的餵球';
+    $('prDet').innerHTML = `<span>飛撲 ${d.dives}・救回 ${d.saves}</span><span>・沒撲到 ${d.miss}・救失敗 ${d.fails}${d.reach ? `・直接接到 ${d.reach}` : ''}</span>`;
+  } else {
+    if (s.n) $('prRateL').innerHTML = `致勝率 <i id="prRate">${Math.round(100 * (s.win + s.forced) / s.n)}%</i>`; else $('prRateL').innerHTML = '<i id="prRate" class="none">尚未殺球</i>';
+    $('prIncl').textContent = '含逼失誤'; $('prIncl').title = '致勝率 =（致勝 + 逼失誤）÷ 殺球';
+    $('prDet').innerHTML = `<span>殺球 ${s.n}・致勝 ${s.win}・逼失誤 ${s.forced}</span><span>・被回擊 ${s.ret}・失誤 ${s.own}</span>`;
+  }
   const rp = m.rp || [0, 0], mt = teamOf(mySeat); $('prMe').textContent = rp[mt]; $('prOp').textContent = rp[1 - mt];
-  $('prDet').innerHTML = `<span>殺球 ${s.n}・致勝 ${s.win}・逼失誤 ${s.forced}</span><span>・被回擊 ${s.ret}・失誤 ${s.own}</span>`;
   el.querySelectorAll('#prDiff button').forEach((b) => b.classList.toggle('sel', b.dataset.d === m.diff));
   el.querySelectorAll('#prSlow button').forEach((b) => b.classList.toggle('sel', +b.dataset.s === SLOW));
   el.classList.toggle('folded', (PORT || FORCED) && !pracSetOpen); $('prSet').textContent = pracSetOpen ? '收起 ▴' : `設定 ▾`; $('prSet').setAttribute('aria-expanded', String(!(PORT || FORCED) || pracSetOpen));
@@ -603,11 +627,11 @@ function lowTip() { lowTipT = performance.now() + 1300; }
 function handleEvent(e) {
   if (!m) return;
   switch (e.k) {
-    case 'hit': slIncoming(e); if (e.feed) PRAC.fed = true; hitCount[e.p] = (hitCount[e.p] || 0) + 1; if (e.shot === 'smash') smashJuice(e.ds); else if (e.dive) diveJuice(e); else SFX.hit(e.shot); if (e.low && e.p === mySeat) lowTip(); if (e.p != null && m.players[e.p]) { m.players[e.p].swing = 1; m.players[e.p].swingShot = e.shot; } break;
+    case 'hit': if (!e.dive) saveTrail.on = false; slIncoming(e); if (e.feed) PRAC.fed = true; hitCount[e.p] = (hitCount[e.p] || 0) + 1; if (e.shot === 'smash') smashJuice(e.ds); else if (e.dive) diveJuice(e); else SFX.hit(e.shot); if (e.low && e.p === mySeat) lowTip(); if (e.p != null && m.players[e.p]) { m.players[e.p].swing = 1; m.players[e.p].swingShot = e.shot; } break;
     case 'serve': slIncoming(e); SFX.hit('drive'); if (m.players[e.p]) { m.players[e.p].swing = 1; m.players[e.p].swingShot = 'serve'; } break;
     case 'bounce': if (!e.dead) SFX.bounce(); fx.push({ k: 'ring', x: e.x, y: e.y, t: 0, d: 0.9, out: PB.isOut(e.x, e.y) && !e.dead }); for (let n = 0; n < 9; n++) { const a = Math.random() * 7, sp = 0.6 + Math.random() * 1.2; fx.push({ k: 'puff', x: e.x, y: e.y, z: 0.03, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vz: 0.8 + Math.random() * 1.4, t: 0, d: 0.45 + Math.random() * 0.25 }); } break;
     case 'net': SFX.net(); break;
-    case 'fault': SFX.whistle(); lastFault = e; break;
+    case 'fault': SFX.whistle(); lastFault = e; savePop(e); break;
     case 'point': case 'sideout': case 'second': {
       let mine = role !== 'spectator' && teamOf(mySeat) === (e.k === 'point' ? e.team : (lastFault ? 1 - lastFault.team : -1));
       (e.k === 'point' ? SFX.point : SFX.side)();
@@ -642,10 +666,10 @@ function updHUD() {
     $('tmL').classList.toggle('serving', m.servingTeam === lt); $('tmR').classList.toggle('serving', m.servingTeam === rt);
     { const ow = m.score[lt], op = m.score[rt]; $('call').innerHTML = m.practice ? '' : `<b class="own">${ow}</b><i>-</i>${op}`; } // own team first, like the rows
     document.body.classList.toggle('pracmode', !!m.practice); // v11: practice hides the pickleball score (rally points are in the panel)
-    $('hdr').textContent = m.practice ? `殺球練習・${DIFF_NAME[m.diff] || ''}${SLOW < 1 ? `・慢動作 ${SLOW}×` : ''}` : `${m.mode === 2 ? '雙打' : '單打'}・${DIFF_NAME[m.diff] || ''}・${m.target}分`;
+    $('hdr').textContent = m.practice ? `${PRAC_NAME[m.practice] || '練習'}・${DIFF_NAME[m.diff] || ''}${SLOW < 1 ? `・慢動作 ${SLOW}×` : ''}` : `${m.mode === 2 ? '雙打' : '單打'}・${DIFF_NAME[m.diff] || ''}・${m.target}分`;
     const sp = m.players[m.server];
     const sw = m.servingTeam === lt && role !== 'spectator' ? '你方' : m.teamNames[m.servingTeam];
-    $('srv').textContent = m.practice ? (!PRAC.started ? '按任一鍵開始' : m.phase === 'serve' && PRAC.fed ? '按任一擊球鍵就餵球' : '電腦一直餵高球') : m.mode === 2 ? `報分 ${PB.callText(m)}・${sw}發球 ${sp ? sp.name : ''}` : `${sw}發球・${sp ? sp.name : ''}`;
+    $('srv').textContent = m.practice ? (!PRAC.started ? '按任一鍵開始' : m.phase === 'serve' && PRAC.fed ? '按任一擊球鍵就餵球' : m.practice === 'dive' ? '電腦把球打到你差一步的地方' : '電腦一直餵高球') : m.mode === 2 ? `報分 ${PB.callText(m)}・${sw}發球 ${sp ? sp.name : ''}` : `${sw}發球・${sp ? sp.name : ''}`;
     measureHud(); requestAnimationFrame(measureHud); // v9: measure now too, so tags drawn this frame already avoid a resized scoreboard
     if (m.practice) requestAnimationFrame(updPrac);
   }
@@ -712,6 +736,7 @@ function readMove() {
 let apPred = null, apKey = '', apServeT = 0, apLazy = false, apSpot = false;
 function autopilot(p) {
   const b = m.ball, xs = PB.teamSign(p.team);
+  if (m.practice === 'dive') return { mx: 0, my: 0 }; // v14 飛撲練習: the autopilot stands still and lets the dive happen
   const mate0 = m.players.find((q) => q.team === p.team && q !== p);
   let tx = xs * (m.hits >= 3 ? C.K + 0.5 : C.HL - 0.3), ty = b.y * 0.4;
   if (mate0) ty = (p.y < mate0.y || (p.y === mate0.y && p.i < mate0.i) ? -1.45 : 1.45) + Math.max(-0.8, Math.min(0.8, b.y * 0.3));
@@ -756,13 +781,16 @@ function startLocal(mode) {
   const seats = seatsLocal(mode); const cfg = { mode, diff: opt.diff, target: opt.target, seats, teamNames: teamNamesOf(seats), firstServe: Math.random() < 0.5 ? 0 : 1 };
   beginMatch(cfg);
 }
-function startPractice(fromUser) {
+const PRAC_NAME = { smash: '殺球練習', dive: '飛撲練習' };
+function startPractice(fromUser, kind) {
+  kind = kind === 'dive' ? 'dive' : 'smash';
   role = 'local'; mySeat = 0; R = 1;
   PRAC.fed = false; PRAC.ready = false; PRAC.armNext = false; PRAC.started = !!fromUser || AUTO; SLOW = slowDefault(); ARM.pt = -1;
-  const seats = seatsLocal(1); beginMatch({ mode: 1, diff: pracDiffDefault(), target: 999, seats, teamNames: teamNamesOf(seats), firstServe: 1, practice: 'smash' }); updPrac();
+  const seats = seatsLocal(1); beginMatch({ mode: 1, diff: pracDiffDefault(), target: 999, seats, teamNames: teamNamesOf(seats), firstServe: 1, practice: kind }); updPrac();
   if (!PRAC.started) setTimeout(() => { if (m && m.practice && !PRAC.started) pracPrompt(); }, 200);
 }
 function beginMatch(cfg) {
+  savePend = null; saveTrail.pts = []; saveTrail.on = false; pops.length = 0;
   if (FORCED && !(cfg.practice && !PRAC.started)) setTimeout(() => toast('橫向模式（手機直拿）・☰ 暫停選單可切回直向'), 400); /* v12: the practice start prompt carries this line instead */ // v10: remembered forced 橫向 is announced
   m = PB.createMatch(cfg); hudSig = ''; slReset(); setTimeout(updPrac, 0); fx.length = 0; trail.length = 0; paused = false;
   for (const p of m.players) { p.rp = { x: p.x, y: p.y }; }
@@ -816,7 +844,8 @@ try { $('nick').value = localStorage.pbNick || ''; } catch (_) {}
 $('nick').addEventListener('change', () => { try { localStorage.pbNick = $('nick').value.trim(); } catch (_) {} });
 $('bS1').onclick = () => { audio(); SFX.click(); startLocal(1); };
 $('bS2').onclick = () => { audio(); SFX.click(); startLocal(2); };
-$('bPrac').onclick = () => { audio(); SFX.click(); startPractice(true); }; // the tap itself is the first input
+$('bPrac').onclick = () => { audio(); SFX.click(); startPractice(true); };
+$('bDivePrac').onclick = () => { audio(); SFX.click(); startPractice(true, 'dive'); }; // v14 飛撲練習 // the tap itself is the first input
 function drawPrev() { const cv2 = $('lookPrev'); if (!cv2) return; const g = cv2.getContext('2d'); const L = myLook(); g.clearRect(0, 0, cv2.width, cv2.height); const sh = sheet(L.ch, L.co); if (sh) { const fr = Math.floor(performance.now() / 166) % 4, k = cv2.height / FH; g.drawImage(sh, fr * FW, 0, FW, FH, (cv2.width - FW * k) / 2, 0, FW * k, FH * k); } $('lookName').textContent = CHARS[L.ch].n + '・' + COLN[L.co]; }
 setInterval(() => { if (state === 'menu') drawPrev(); }, 166);
 const showRules = () => $('rules').classList.remove('hide');
@@ -1081,6 +1110,6 @@ resize();
 function loop(now) { frame(now); requestAnimationFrame(loop); }
 requestAnimationFrame(loop);
 // test hooks
-window.__pb = { looks: () => ({ room, prefs, rs: roomSeats() }), get m() { return m; }, proj, get view() { return { W, H, F, touchUI, port: PORT, pan: PAN, safe: safeRect(), ballR: lastBallR, tags: lastTags, hud: hudBlock, fpsY, fpsR }; }, showMsg, get state() { return state; }, get role() { return role; }, get room() { return roomCode; }, get roster() { return roster; }, get net() { return net; }, get fps() { return fps; }, get seat() { return mySeat; }, get forced() { return FORCED; }, appRect, appXY, get orient() { return opt.orient; }, hitCount, startLocal, press, juice, get smashLow() { return smashLowNow; }, contactZ: () => contactZ(m && m.players[mySeat]), get lowTipT() { return lowTipT; }, SL, AID, startPractice, setPracDiff, togglePracSet, setSlow, get slow() { return SLOW; }, get ts() { return TS; }, get armed() { return armedNow(); }, ARM, PRAC, fireSmash: (k) => { for (let i = 0; i < k; i++) smashJuice(1); }, freezeJuice: (k) => { FREEZE.armed = true; FREEZE.at = k | 0; FREEZE.left = -1; FREEZE.frozen = false; }, freezeDive: (k) => { FREEZE.armedDive = true; FREEZE.at = k | 0; FREEZE.left = -1; FREEZE.frozen = false; }, setupDive, unfreeze: () => { FREEZE.frozen = false; FREEZE.left = -1; FREEZE.armed = false; FREEZE.aidArm = false; FREEZE.armedDive = false; }, hold: () => { FREEZE.frozen = true; }, freezeAid: () => { FREEZE.aidArm = true; }, get freezeOn() { return FREEZE.frozen; }, get freeze() { return FREEZE; }, get cards() { return smashCard.n || 0; } };
-if (QS.get('demo') === 'smash') startPractice(); // ?demo=smash opens 殺球練習 directly
+window.__pb = { looks: () => ({ room, prefs, rs: roomSeats() }), get m() { return m; }, proj, get view() { return { W, H, F, touchUI, port: PORT, pan: PAN, safe: safeRect(), ballR: lastBallR, tags: lastTags, tagsNow: tagRects, hud: hudBlock, fpsY, fpsR }; }, showMsg, get state() { return state; }, get role() { return role; }, get room() { return roomCode; }, get roster() { return roster; }, get net() { return net; }, get fps() { return fps; }, get seat() { return mySeat; }, get forced() { return FORCED; }, appRect, appXY, get orient() { return opt.orient; }, hitCount, startLocal, press, juice, get smashLow() { return smashLowNow; }, contactZ: () => contactZ(m && m.players[mySeat]), get lowTipT() { return lowTipT; }, SL, AID, startPractice, setPracDiff, togglePracSet, setSlow, get slow() { return SLOW; }, get ts() { return TS; }, get armed() { return armedNow(); }, ARM, PRAC, fireSmash: (k) => { for (let i = 0; i < k; i++) smashJuice(1); }, freezeJuice: (k) => { FREEZE.armed = true; FREEZE.at = k | 0; FREEZE.left = -1; FREEZE.frozen = false; }, freezeDive: (k) => { FREEZE.armedDive = true; FREEZE.at = k | 0; FREEZE.left = -1; FREEZE.frozen = false; }, setupDive, unfreeze: () => { FREEZE.frozen = false; FREEZE.left = -1; FREEZE.armed = false; FREEZE.aidArm = false; FREEZE.armedDive = false; }, hold: () => { FREEZE.frozen = true; }, freezeAid: () => { FREEZE.aidArm = true; }, get freezeOn() { return FREEZE.frozen; }, get freeze() { return FREEZE; }, saveTrail, pops, get cards() { return smashCard.n || 0; } };
+if (QS.get('demo') === 'smash' || QS.get('demo') === 'dive') startPractice(false, QS.get('demo')); // ?demo=smash / ?demo=dive opens the practice directly
 })();

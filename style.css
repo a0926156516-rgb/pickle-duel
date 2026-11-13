@@ -301,3 +301,4 @@ body.port #prac{width:min(306px,calc(100vw - 16px))}body.port #prac .pr2{font-si
 body.forced #prSet{display:inline-block}body.forced #prac{width:200px}body.forced #prac .pr1{justify-content:flex-start}body.forced #prac .pr1 .rp{margin-left:auto}
 body.forced #prac.folded .pr2{min-height:0;font-size:10.5px}
 body.forced #prac{width:184px}body.forced #prac.folded .pr2{display:none}
+.prbtns{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}

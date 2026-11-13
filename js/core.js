@@ -23,7 +23,10 @@ const SMASH_Z = 0.9, SMASH_ZH = 0.8, SMASH_WAIT = 0.25, SM_LUNGE = +(typeof proc
 // v13 飛身撲球: a ball just past the normal reach (up to DIVE_EXTRA m further, not above DIVE_ZMAX) that is getting away is saved
 // with a full-length dive. The return is a weak, high sitter; the diver lies on the court for DIVE_T s and then moves slowly until
 // DIVE_STUN s after take-off (no hits during that time). CPU players dive with a per-level chance, decided once per incoming ball.
-const DIVE_EXTRA = 0.95, DIVE_ZMAX = 1.3, DIVE_T = 0.55, DIVE_STUN = 1.15, DIVE_SLOW = 0.35, DIVE_AI = { easy: 0.3, normal: 0.5, hard: 0.7 };
+const DIVE_EXTRA = 1.05, DIVE_ZMAX = 1.3, DIVE_T = 0.55, DIVE_STUN = 1.15, DIVE_SLOW = 0.35, DIVE_AI = { easy: 0.3, normal: 0.5, hard: 0.7 };
+// v14: CPUs sometimes play a wide, angled drive that stretches the receiver; a CPU receiver is wrong-footed by it (stops one
+// reach-and-a-bit short of the ball) and has to dive. Chance per CPU drive in a rally:
+const DIVE_WIDE = { easy: 0.06, normal: 0.2, hard: 0.28 };
 const HUMAN_REACH = { easy: 1.45, normal: 1.3, hard: 1.08 }; // auto-swing radius multiplier for human players (beginner friendly)
 const teamSign = (t) => (t === 0 ? -1 : 1);
 const sideSign = (t, s) => (t === 0 ? (s === 'R' ? -1 : 1) : (s === 'R' ? 1 : -1));
@@ -46,7 +49,7 @@ function createMatch(cfg) {
     phase: 'serve', phaseT: 0, point: 0, hits: 0, bounces: 0, lastHitTeam: -1, lastHitter: -1,
     ball: { x: 0, y: 0, z: 1, vx: 0, vy: 0, vz: 0 }, live: false, events: [], winner: -1,
     pred: null, msg: '', rally: 0, stats: { faults: {}, rallies: [], points: 0 }, autoServe: cfg.autoServe || 10,
-    practice: cfg.practice === 'smash' ? 'smash' : null, // v8 殺球練習: the CPU keeps feeding high balls
+    practice: cfg.practice === 'smash' ? 'smash' : cfg.practice === 'dive' ? 'dive' : null, dvStats: { feeds: 0, dives: 0, saves: 0, fails: 0, miss: 0, reach: 0 }, // v8 殺球練習: the CPU keeps feeding high balls
     smStats: [0, 1].map(() => ({ n: 0, win: 0, forced: 0, own: 0, ret: 0 })), smTrack: null
   };
   for (let i = 0; i < n; i++) {
@@ -191,6 +194,9 @@ function makeShot(m, p, shot, aimY, aiTarget) {
   b.vx = v.vx; b.vy = v.vy; b.vz = v.vz; b.z = from.z;
   p.swing = 1; p.swingShot = kind;
   m.smFate = null;
+  let wideH = false; // v14: a player's own angled drive away from a CPU receiver can wrong-foot it too (so players see CPUs dive)
+  if (human && kind === 'drive' && !mis && !m.practice) { const rc = m.players.filter((q) => q.team === o && q.ctrl === 'ai'); if (rc.length && Math.min(...rc.map((q) => Math.abs(q.y - ty))) > C.REACH + 0.3 && r() < (DIVE_WIDE[m.diff] || 0) * 1.5) wideH = true; }
+  m.dvFate = (aiTarget && aiTarget.wide && !mis) || wideH ? { rally: m.rally + 1, team: o } : null; // v14: a CPU receiver is wrong-footed by it
   if (kind === 'smash' && shot === 'smash') { // decide how the CPU on the other side copes with this smash
     const opp = m.players.filter((q) => q.team === o), Dr = DIFF[m.diff].sm;
     const hq = 0.6 + 0.4 * clamp((b.z - zt) / 0.9, 0, 1);                       // the higher the contact, the steeper and harder
@@ -216,7 +222,8 @@ function fault(m, team, reason, who) {
   if (m.phase !== 'rally' && m.phase !== 'serve') return;
   if (m.smTrack) { const t = m.smTrack; smResolve(m, team === t.team ? (t.touched ? 'ret' : 'own') : t.touched ? 'forced' : 'win'); }
   m.phase = 'dead'; m.phaseT = 0; m.live = false;
-  if (m.practice) (m.rp || (m.rp = [0, 0]))[1 - team]++; // v11 practice: rally points (every rally scores for whoever won it)
+  if (m.practice) (m.rp || (m.rp = [0, 0]))[1 - team]++;
+  if (m.practice === 'dive') { const S = m.dvStats, dove = m.dvDove === m.point; if (team === 1) { if (dove) S.saves++; else S.reach++; } else if (dove) S.fails++; else S.miss++; } // v11 practice: rally points (every rally scores for whoever won it)
   m.stats.faults[reason] = (m.stats.faults[reason] || 0) + 1; m.stats.rallies.push(m.rally); m.stats.points++;
   const st = m.servingTeam;
   let out;
@@ -248,6 +255,7 @@ function onBounce(m) {
   }
   if (half === m.lastHitTeam) return fault(m, m.lastHitTeam, '球未過網', m.lastHitter);
   if (m.bounces === 0 && isOut(b.x, b.y)) return fault(m, m.lastHitTeam, '出界！', m.lastHitter);
+  if (m.practice === 'dive' && half === 1 && m.lastHitTeam === 0) return fault(m, 1, m.dvDove === m.point ? '救球成功' : '回球成功', -1); // 飛撲練習: the save landed in
   if (m.smTrack && m.smTrack.touched && half === m.smTrack.team) smResolve(m, 'ret'); // the reply landed in
   m.bounces++; m.pred = null;
   if (m.bounces >= 2) return fault(m, half, '兩次落地（沒接到）', -1);
@@ -255,7 +263,7 @@ function onBounce(m) {
 
 function canReach(m, p) {
   const b = m.ball;
-  if (!m.live || m.lastHitTeam === p.team || p.stun > 0) return false;
+  if (!m.live || m.lastHitTeam === p.team || p.stun > 0 || (m.practice === 'dive' && p.ctrl === 'ai')) return false; // 飛撲練習: the feeder never plays the save back
   if ((b.x < 0 ? 0 : 1) !== p.team) return false;
   if (b.z < 0.06 || b.z > 2.4) return false;
   const f = m.smFate, lunge = p.ctrl === 'ai' && f && f.rally === m.rally && f.team === p.team && f.f !== 'miss' ? SM_LUNGE : 1; // v7: a CPU that reads the smash lunges for it
@@ -267,7 +275,7 @@ function reachOf(m, p) { return C.REACH * (m.ball.z > 1.7 ? 0.8 : 1) * (p.ctrl =
 // (distance growing even with p's own run), low enough to dive for, a legal hit, and not a ball that will land out anyway.
 function canDive(m, p) {
   const b = m.ball;
-  if (!m.live || m.lastHitTeam === p.team || p.stun > 0 || m.practice) return false; // smash practice stays as it was (no dives)
+  if (!m.live || m.lastHitTeam === p.team || p.stun > 0 || (m.practice && !(m.practice === 'dive' && p.ctrl !== 'ai'))) return false; // no dives in smash practice; in 飛撲練習 only the player dives
   if ((b.x < 0 ? 0 : 1) !== p.team || b.z < 0.06 || b.z > DIVE_ZMAX) return false;
   const dx = b.x - p.x, dy = b.y - p.y, d = Math.hypot(dx, dy), r = reachOf(m, p);
   if (d <= r || d > r + DIVE_EXTRA) return false;
@@ -280,6 +288,7 @@ function startDive(m, p) {
   const b = m.ball, dx = b.x - p.x, dy = b.y - p.y, d = Math.hypot(dx, dy) || 1;
   p.dive = DIVE_T; p.stun = DIVE_STUN; p.diveX = dx / d; p.diveY = dy / d; p.diveD = d; p.diveL = Math.min(1.4, Math.max(0.5, d - 0.35)); p.diveN = (p.diveN || 0) + 1;
   (m.dives || (m.dives = [0, 0]))[p.team]++;
+  if (m.practice === 'dive') { m.dvDove = m.point; m.dvStats.dives++; }
 }
 // returns null if legal, else a fault reason
 function illegal(m, p) {
@@ -298,7 +307,8 @@ function doHit(m, p, shot, aimY, aiTarget) {
   const kind = makeShot(m, p, shot, aimY, aiTarget);
   m.hits++; m.rally++; m.bounces = 0; m.lastHitTeam = p.team; m.lastHitter = p.i; m.pred = null;
   if (shot === 'smash' && kind === 'smash') m.smTrack = { team: p.team, p: p.i, touched: 0 };
-  ev(m, { k: 'hit', p: p.i, shot: kind, dive: kind === 'dive' ? 1 : 0, dx: kind === 'dive' ? Math.round(p.diveX * 100) / 100 : 0, dy: kind === 'dive' ? Math.round(p.diveY * 100) / 100 : 0, dl: kind === 'dive' ? Math.round(p.diveL * 100) / 100 : 0, volley: p.volleyT === m.t, low: p.lowSmash ? 1 : 0, ds: shot === 'smash' && kind === 'smash' ? 1 : 0, pop: p.popUp ? 1 : 0 });
+  m.dvSave = kind === 'dive' ? m.rally : -1;
+  ev(m, { k: 'hit', p: p.i, shot: kind, wide: aiTarget && aiTarget.wide ? 1 : 0, dive: kind === 'dive' ? 1 : 0, dx: kind === 'dive' ? Math.round(p.diveX * 100) / 100 : 0, dy: kind === 'dive' ? Math.round(p.diveY * 100) / 100 : 0, dl: kind === 'dive' ? Math.round(p.diveL * 100) / 100 : 0, volley: p.volleyT === m.t, low: p.lowSmash ? 1 : 0, ds: shot === 'smash' && kind === 'smash' ? 1 : 0, pop: p.popUp ? 1 : 0 });
 }
 function doServe(m, shot, aimY) {
   const p = m.players[m.server], r = m.r, rt = 1 - m.servingTeam, human = p.ctrl !== 'ai';
@@ -385,7 +395,13 @@ function aiThink(m, p, dt) {
           if (need <= q.t) { best = q; break; }
         }
         const q = best || last;
-        if (q && a.leave !== m.rally && aiResponsible(m, p, q)) { tx = q.x + xs * 0.25; ty = q.y - 0.3 * Math.sign(q.y || 1) * 0; a.resp = true; }
+        const fated = m.dvFate && m.dvFate.rally === m.rally && m.dvFate.team === p.team;
+        if (fated && q && a.leave !== m.rally && aiResponsible(m, p, q)) { // v14 wrong-footed: runs, but ends up a stride short -> dives
+          if (a.dvK !== m.rally) { const lo = m.pred.find((u) => (u.x < 0 ? 0 : 1) === p.team && u.b < 2 && u.z >= 0.15 && u.z <= 1.15 && (u.b > 0 || canVolley2(m, u))) || q;
+            const ux = p.x - lo.x, uy = p.y - lo.y, ul = Math.hypot(ux, uy) || 1, S = C.REACH + 0.3 + m.r() * 0.45;
+            a.dvK = m.rally; a.dvX = lo.x + ux / ul * S; a.dvY = lo.y + uy / ul * S; a.diveK = m.rally; a.diveOk = true; }
+          tx = a.dvX; ty = a.dvY; a.resp = true; }
+        else if (q && a.leave !== m.rally && aiResponsible(m, p, q)) { tx = q.x + xs * 0.25; ty = q.y - 0.3 * Math.sign(q.y || 1) * 0; a.resp = true; }
         else a.resp = false;
         if (a.leave === m.rally) { // get out of the way of an out ball
           const fb = m.pred.firstBounce; if (fb) { const dy = p.y - fb.y; if (Math.abs(dy) < 1.3) ty = p.y + Math.sign(dy || 1) * 1.4; }
@@ -424,6 +440,14 @@ function aiShot(m, p) {
   for (const y of [-2.3, -1.2, 0, 1.2, 2.3]) { const s = Math.min(...opp.map((q) => Math.abs(q.y - y))) + r() * 0.8; if (s > bs) { bs = s; by = y; } }
   if (shot === 'dink') by = clamp(-p.y * 0.6 + (r() - 0.5), -2.2, 2.2);
   if (m.practice) return { shot: 'lob', target: { feed: true } };
+  if (m.dvSave === m.rally && idx >= 4) { // v14: the sitter off a dive is put away, away from the diver who is still on the floor
+    const dv = opp.find((q) => q.stun > 0) || opp[0];
+    return { shot: b.z >= SMASH_Z + 0.15 && Math.abs(p.x) < 5.4 ? 'smash' : 'drive', target: { y: dv.y > 0 ? -2.25 : 2.25 } };
+  }
+  if (shot === 'drive' && idx >= 4 && r() < (DIVE_WIDE[m.diff] || 0)) { // v14 wide drive: past the receiver's reach, toward the open sideline
+    const q = opp.reduce((a, c) => (Math.abs(c.y - b.y) < Math.abs(a.y - b.y) ? c : a)), sd = q.y > 0.4 ? -1 : q.y < -0.4 ? 1 : (r() < 0.5 ? -1 : 1);
+    return { shot, target: { y: clamp(q.y + sd * 2.1, -2.55, 2.55), x: 4.6 + r() * 0.8, wide: 1 } };
+  }
   return { shot, target: { y: by } };
 }
 
@@ -432,10 +456,21 @@ function aiShot(m, p) {
 // into the player's smash zone; from there the normal rules decide the point. The CPU keeps answering with feeds.
 function practiceFeed(m) {
   const fp = teamPlayers(m, 1)[0], r = m.r; if (!fp) return;
+  if (m.practice === 'dive') return diveFeed(m, fp);
   m.phase = 'rally'; m.phaseT = 0; m.live = true; m.hits = 4; m.rally = 4; m.bounces = 0; m.lastHitTeam = fp.team; m.lastHitter = fp.i; m.pred = null;
   const from = { x: fp.x - 0.3, y: fp.y, z: 0.8 }, tx = -(3.6 + r() * 1.8), ty = (r() - 0.5) * 3.2;
   const v = launch(from, tx, ty, 1.3 + r() * 0.3, 0.6); Object.assign(m.ball, from, v);
   fp.swing = 1; fp.swingShot = 'lob'; ev(m, { k: 'hit', p: fp.i, shot: 'lob', feed: 1 });
+}
+// v14 飛撲練習: a low drive straight down a line just past the player's reach (dive band), bouncing a stride in front of them
+function diveFeed(m, fp) {
+  const me = teamPlayers(m, 0)[0], r = m.r; m.dvStats.feeds++;
+  m.phase = 'rally'; m.phaseT = 0; m.live = true; m.hits = 4; m.rally = 4; m.bounces = 0; m.lastHitTeam = fp.team; m.lastHitter = fp.i; m.pred = null;
+  const reach = C.REACH * (HUMAN_REACH[m.diff] || 1), lat = reach + 0.3 + r() * 0.55;
+  let sd = me.y > 0.4 ? -1 : me.y < -0.4 ? 1 : r() < 0.5 ? -1 : 1; if (Math.abs(me.y + sd * lat) > C.HW - 0.15) sd = -sd;
+  const ty = clamp(me.y + sd * lat, -C.HW + 0.15, C.HW - 0.15), bx = clamp(me.x + 1.5, -C.HL + 0.4, -C.K - 0.6);
+  const from = { x: fp.x - 0.3, y: ty, z: 0.7 }, v = launch(from, bx, ty, 0.95 + r() * 0.2, 0.25); Object.assign(m.ball, from, v);
+  fp.swing = 1; fp.swingShot = 'drive'; ev(m, { k: 'hit', p: fp.i, shot: 'drive', feed: 1 });
 }
 // v9 smash timing aid: where the incoming ball meets me from where I stand (contact), and the best place to step in for a smash (spot)
 function smashAid(m, p) {
@@ -543,6 +578,6 @@ function sub(m, dt) {
   }
 }
 
-const API = { C, DIFF, SMASH_Z, SMASH_ZH, SMASH_WAIT, HUMAN_REACH, DIVE: { EXTRA: DIVE_EXTRA, ZMAX: DIVE_ZMAX, T: DIVE_T, STUN: DIVE_STUN, SLOW: DIVE_SLOW, AI: DIVE_AI }, canDive, canReach, reachOf, smashAid, TEAM_NAME, createMatch, step, setupPoint, callText, movePlayer, clampPlayer, teamSign, sideSign, netH, inKitchen, isOut, predict, formation };
+const API = { C, DIFF, SMASH_Z, SMASH_ZH, SMASH_WAIT, HUMAN_REACH, DIVE: { WIDE: DIVE_WIDE, EXTRA: DIVE_EXTRA, ZMAX: DIVE_ZMAX, T: DIVE_T, STUN: DIVE_STUN, SLOW: DIVE_SLOW, AI: DIVE_AI }, canDive, canReach, reachOf, smashAid, TEAM_NAME, createMatch, step, setupPoint, callText, movePlayer, clampPlayer, teamSign, sideSign, netH, inKitchen, isOut, predict, formation };
 if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.PB = API;
 })(typeof self !== 'undefined' ? self : this);
